@@ -41,6 +41,17 @@ namespace CadBatch.Desktop
             {
                 var lobby=new ConnectionWindow();lobby.ContentRendered+=(s,e)=>{try{lobby.UpdateLayout();var content=(System.Windows.FrameworkElement)lobby.Content;var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(content);var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));using(var output=File.Create(args[1]))encoder.Save(output);File.WriteAllText(args[1]+".txt","Connection window PASS; no CAD or demo data required.");}catch(Exception ex){File.WriteAllText(args[1]+".error.txt",ex.ToString());Environment.ExitCode=1;}finally{lobby.Close();}};app.Run(lobby);return;
             }
+            if(args.Length==2&&args[0]=="--look-smoke")
+            {
+                // Renders simple mode, advanced mode and the largest text size for visual review.
+                Directory.CreateDirectory(args[1]);var look=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(args[1],"look-profile.json"));
+                look.ContentRendered+=async(s,e)=>{try{await look.SmokeAsync(Path.Combine(args[1],"simple.png"));
+                    look.PreviewLook(true,1);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"advanced.png"));look.RenderCard(Path.Combine(args[1],"card.png"));
+                    var capture=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(700)};capture.Tick+=(_,__)=>{capture.Stop();var sheet=System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().FirstOrDefault(w=>w!=look);if(sheet!=null){UiTheme.Snapshot((System.Windows.FrameworkElement)sheet.Content,Path.Combine(args[1],"done.png"));sheet.Close();}};capture.Start();
+                    ModernDialog.Actions(new System.Windows.Interop.WindowInteropHelper(look).Handle,"Готово!","Сохранено PDF-файлов: 12\nПапка: D:\\Проекты\\АР\\PDF",DialogKind.Success,"Открыть папку","Открыть первый PDF","Закрыть");
+                    look.PreviewLook(false,1.3);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"large.png"));}
+                    catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"look.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{look.Close();}};app.Run(look);return;
+            }
             if(args.Length==2&&args[0]=="--empty-smoke")
             {
                 var empty=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!,"empty-profile.json"));

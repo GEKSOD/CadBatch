@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -16,6 +16,13 @@ namespace CadBatch.UI
     // Every dialog has one clear primary action; Enter confirms and Esc cancels.
     public static class ModernDialog
     {
+        // Set by the visible window, so every dialog follows the chosen text size.
+        public static double TextScale {get;set;}=1;
+        // Several outcomes: labels[0] is the primary action, the last one closes. Returns the index or -1.
+        public static int Actions(IntPtr owner,string title,string text,DialogKind kind,params string[] labels)
+        {
+            var sheet=new Sheet(owner,title,text,kind,null,labels[0],null,460,null,false,labels);return sheet.ShowDialog()==true?sheet.Choice:-1;
+        }
         public static string[]? Values(IntPtr owner,string title,string? lead,params (string Label,string Value)[] fields)
         {
             var boxes=new List<TextBox>();var stack=new StackPanel();
@@ -50,7 +57,7 @@ namespace CadBatch.UI
         {
             string lead="";string body=text.Replace("\r\n","\n");
             var box=new TextBox{Text=body.Trim(),IsReadOnly=true,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,BorderThickness=new Thickness(0),
-                Background=UiTheme.Canvas,Padding=new Thickness(14,12,14,12),VerticalContentAlignment=VerticalAlignment.Top,MaxHeight=420,MinHeight=60,FontSize=13};
+                Background=UiTheme.Canvas,Padding=new Thickness(14,12,14,12),VerticalContentAlignment=VerticalAlignment.Top,MaxHeight=420,MinHeight=60,FontSize=15};
             var frame=new Border{Child=box,CornerRadius=new CornerRadius(10),Background=UiTheme.Canvas,ClipToBounds=true,Padding=new Thickness(2)};
             var sheet=new Sheet(owner,title,lead.Length>0?lead:null,apply==null?DialogKind.Info:DialogKind.Question,frame,apply??"Готово",apply==null?null:"Отмена",660,extra);
             return sheet.ShowDialog()==true&&apply!=null;
@@ -77,7 +84,7 @@ namespace CadBatch.UI
             {
                 grid.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
                 var label=UiTheme.Hint(facts[i].Label,new Thickness(0,5,18,5));Grid.SetRow(label,i);grid.Children.Add(label);
-                var value=UiTheme.Text(facts[i].Value,13,FontWeights.SemiBold);value.Margin=new Thickness(0,4,0,4);Grid.SetRow(value,i);Grid.SetColumn(value,1);grid.Children.Add(value);
+                var value=UiTheme.Text(facts[i].Value,15,FontWeights.SemiBold);value.Margin=new Thickness(0,4,0,4);Grid.SetRow(value,i);Grid.SetColumn(value,1);grid.Children.Add(value);
             }
             stack.Children.Add(new Border{Child=grid,Background=UiTheme.Canvas,CornerRadius=new CornerRadius(10),Padding=new Thickness(14,8,14,8),Margin=new Thickness(0,0,0,12)});
             if(details.Trim().Length>0)
@@ -90,29 +97,39 @@ namespace CadBatch.UI
 
         private sealed class Sheet : Window
         {
-            public Sheet(IntPtr owner,string title,string? lead,DialogKind kind,UIElement? content,string apply,string? cancel,double width,(string Label,Action<Window> Action)? extra=null,bool destructive=false)
+            public int Choice {get;private set;}=-1;
+            public Sheet(IntPtr owner,string title,string? lead,DialogKind kind,UIElement? content,string apply,string? cancel,double width,(string Label,Action<Window> Action)? extra=null,bool destructive=false,string[]? actions=null)
             {
-                UiTheme.Apply(this,false);Title=title;Width=width+32;SizeToContent=SizeToContent.Height;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;
+                UiTheme.Apply(this,false);Title=title;double scale=Math.Max(1,TextScale);width+=60;Width=width*scale+32;SizeToContent=SizeToContent.Height;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;
                 WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=Brushes.Transparent;
                 if(owner!=IntPtr.Zero){new WindowInteropHelper(this).Owner=owner;WindowStartupLocation=WindowStartupLocation.CenterOwner;}else WindowStartupLocation=WindowStartupLocation.CenterScreen;
                 if(owner==IntPtr.Zero&&Application.Current?.MainWindow!=null&&Application.Current.MainWindow.IsVisible){Owner=Application.Current.MainWindow;WindowStartupLocation=WindowStartupLocation.CenterOwner;}
                 var root=new StackPanel{Margin=new Thickness(24,24,24,20)};
                 var head=new DockPanel{Margin=new Thickness(0,0,0,lead==null&&content==null?6:8)};
                 var badge=Badge(kind);DockPanel.SetDock(badge,Dock.Left);head.Children.Add(badge);
-                var caption=UiTheme.Title(title,17);caption.VerticalAlignment=VerticalAlignment.Center;caption.Margin=new Thickness(12,0,0,0);head.Children.Add(caption);root.Children.Add(head);
-                if(!string.IsNullOrWhiteSpace(lead)){var text=UiTheme.Text(lead!.Trim(),13,null,UiTheme.Secondary);text.Margin=new Thickness(44,0,0,16);text.LineHeight=19;root.Children.Add(text);}
+                var caption=UiTheme.Title(title,19);caption.VerticalAlignment=VerticalAlignment.Center;caption.Margin=new Thickness(12,0,0,0);head.Children.Add(caption);root.Children.Add(head);
+                if(!string.IsNullOrWhiteSpace(lead)){var text=UiTheme.Text(lead!.Trim(),15,null,UiTheme.Secondary);text.Margin=new Thickness(46,0,0,16);text.LineHeight=22;root.Children.Add(text);}
                 else root.Children.Add(new Border{Height=8});
                 if(content!=null)root.Children.Add(content);
                 var buttons=new DockPanel{Margin=new Thickness(0,20,0,0),LastChildFill=false};
-                var ok=UiTheme.Button(apply,null,destructive?"Danger":"Primary");ok.IsDefault=true;ok.MinWidth=110;ok.Margin=new Thickness(8,0,0,0);ok.Click+=(s,e)=>DialogResult=true;DockPanel.SetDock(ok,Dock.Right);buttons.Children.Add(ok);
+                if(actions!=null)
+                {
+                    // Primary on the right, the closing action last on the left of it, Apple order.
+                    for(int i=0;i<actions.Length;i++){int index=i;var b=UiTheme.Button(actions[i],null,i==0?"Primary":"Outline");b.MinWidth=110;b.Margin=new Thickness(8,0,0,0);b.IsDefault=i==0;b.IsCancel=i==actions.Length-1&&i>0;b.Click+=(s,e)=>{Choice=index;DialogResult=true;};DockPanel.SetDock(b,Dock.Right);buttons.Children.Add(b);}
+                }
+                else
+                {
+                    var ok=UiTheme.Button(apply,null,destructive?"Danger":"Primary");ok.IsDefault=true;ok.MinWidth=110;ok.Margin=new Thickness(8,0,0,0);ok.Click+=(s,e)=>DialogResult=true;DockPanel.SetDock(ok,Dock.Right);buttons.Children.Add(ok);
+                }
                 if(cancel!=null){var no=UiTheme.Button(cancel);no.IsCancel=true;no.MinWidth=96;DockPanel.SetDock(no,Dock.Right);buttons.Children.Add(no);}
                 if(extra!=null){var more=UiTheme.Button(extra.Value.Label,null,"Plain");more.Click+=(s,e)=>{try{extra.Value.Action(this);}catch(Exception ex){Message(new WindowInteropHelper(this).Handle,"Не получилось",ex.Message,DialogKind.Warning);}};DockPanel.SetDock(more,Dock.Left);buttons.Children.Add(more);}
                 root.Children.Add(buttons);
                 var surface=new Border{Child=root,Background=Brushes.White,CornerRadius=new CornerRadius(16),BorderBrush=new SolidColorBrush(Color.FromArgb(40,0,0,0)),BorderThickness=new Thickness(1),Margin=new Thickness(16),
                     Effect=new DropShadowEffect{BlurRadius=28,ShadowDepth=6,Direction=270,Opacity=0.22}};
                 surface.MouseLeftButtonDown+=(s,e)=>{if(e.ButtonState==MouseButtonState.Pressed&&!(e.OriginalSource is TextBox))try{DragMove();}catch(InvalidOperationException){}};
+                if(scale>1.001)root.LayoutTransform=new ScaleTransform(scale,scale);
                 Content=surface;
-                PreviewKeyDown+=(s,e)=>{if(e.Key==Key.Escape){DialogResult=cancel==null;e.Handled=true;}};
+                PreviewKeyDown+=(s,e)=>{if(e.Key==Key.Escape){if(actions!=null)DialogResult=false;else DialogResult=cancel==null;e.Handled=true;}};
             }
             private static Border Badge(DialogKind kind)
             {
@@ -125,7 +142,7 @@ namespace CadBatch.UI
                     case DialogKind.Question:fg=UiTheme.Accent;bg=UiTheme.AccentSoft;glyph=UiTheme.IconDocument;break;
                     default:fg=UiTheme.Accent;bg=UiTheme.AccentSoft;glyph=UiTheme.IconInfo;break;
                 }
-                return new Border{Width=32,Height=32,CornerRadius=new CornerRadius(9),Background=bg,Child=new TextBlock{Text=glyph,FontFamily=UiTheme.Icons,FontSize=15,Foreground=fg,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
+                return new Border{Width=34,Height=34,CornerRadius=new CornerRadius(10),Background=bg,Child=new TextBlock{Text=glyph,FontFamily=UiTheme.Icons,FontSize=16,Foreground=fg,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
             }
         }
     }

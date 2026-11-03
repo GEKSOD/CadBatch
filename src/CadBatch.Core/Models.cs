@@ -84,12 +84,17 @@ namespace CadBatch.Core
         public string Key => DocumentKey + "|" + Layout + "|" + HandlePath;
     }
 
-    public sealed class DetectedFrame
+    // Change notification lets every view of a sheet (table row, sheet card) update together.
+    public sealed class DetectedFrame : System.ComponentModel.INotifyPropertyChanged
     {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        private void Changed(string name)=>PropertyChanged?.Invoke(this,new System.ComponentModel.PropertyChangedEventArgs(name));
+        private bool enabled=true;
+        private string sheetNumber="",title="",status="Готово к проверке";
         public FrameCandidate Source { get; set; } = new FrameCandidate();
         public Rectangle2 Geometry { get; set; } = null!;
         public FormatDefinition Format { get; set; } = new FormatDefinition();
-        public bool Enabled { get; set; } = true;
+        public bool Enabled { get=>enabled; set{if(enabled==value)return;enabled=value;Changed(nameof(Enabled));} }
         public int Copies { get; set; } = 1;
         public string Device { get; set; } = "";
         public string StyleSheet { get; set; } = "";
@@ -98,8 +103,8 @@ namespace CadBatch.Core
         public StampScaleEvidence? StampEvidence {get;set;}
         public string ScaleSource=>StampEvidence==null?"Список масштабов":"Штамп: "+StampEvidence.Settings.ReferenceWidthMm.ToString(System.Globalization.CultureInfo.CurrentCulture)+" мм";
         public int Page { get; set; }
-        public string SheetNumber { get; set; } = "";
-        public string Title { get; set; } = "";
+        public string SheetNumber { get=>sheetNumber; set{if(sheetNumber==value)return;sheetNumber=value??"";Changed(nameof(SheetNumber));} }
+        public string Title { get=>title; set{if(title==value)return;title=value??"";Changed(nameof(Title));} }
         public string Code { get; set; } = "";
         public Dictionary<string,string> Metadata {get;set;}=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         public string Revision {get;set;}="";
@@ -107,7 +112,7 @@ namespace CadBatch.Core
         public string OriginalRevision {get;set;}="";
         public string OriginalCode {get;set;}="";
         public string OriginalSheetNumber {get;set;}="";
-        public string Status { get; set; } = "Готово к проверке";
+        public string Status { get=>status; set{if(status==value)return;status=value??"";Changed(nameof(Status));} }
         public string File => Source.DocumentName;
         public string Layout => Source.Layout;
         public string FormatName => Format.Name;

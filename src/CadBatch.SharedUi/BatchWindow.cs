@@ -129,6 +129,7 @@ namespace CadBatch.UI
         // Last finished PDF batch: the main window offers to open its folder.
         public string? LastOutputFolder {get;private set;}
         public int LastOutputCount {get;private set;}
+        public List<string> LastOutputFiles {get;private set;}=new List<string>();
         private async Task RunAsync(Func<Task> action)
         {
             if(running!=null)return;
@@ -149,7 +150,8 @@ namespace CadBatch.UI
             finally { frames.RaiseListChangedEvents=true;frames.ResetBindings(); }
             scaleNeedsSearch=false;
             if(string.IsNullOrWhiteSpace(folder.Text)&&frames.Count>0&&Path.IsPathRooted(frames[0].Source.DocumentPath))folder.Text=Path.Combine(Path.GetDirectoryName(frames[0].Source.DocumentPath)!,"PDF");
-            status.Text=$"Найдено: {frames.Count} • проверено контуров: {result.ObjectsVisited} • совпадений: {result.Duplicates} • замечаний: {diagnostics.Count}";
+            diagnostics.Insert(0,$"Поиск: найдено {frames.Count}, проверено контуров {result.ObjectsVisited}, совпадений {result.Duplicates}.");
+            status.Text=frames.Count==0?"Рамки не найдены. Проверьте, что чертёж открыт, и включите «Модель» или «Листы».":"Найдено листов: "+frames.Count+(diagnostics.Count>1?" · есть замечания — «Справка → Диагностика»":"");
         }
         private async Task LocateAsync()
         {
@@ -199,7 +201,7 @@ namespace CadBatch.UI
             Directory.CreateDirectory(profile.OutputFolder);
             string reportPath=Path.Combine(profile.OutputFolder,"CadBatch-report-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".txt");
             File.WriteAllText(reportPath,ExportReportText.Format(report,request,host.Description),Encoding.UTF8);
-            LastOutputFolder=report.Files.Count>0?profile.OutputFolder:null;LastOutputCount=report.Files.Count;
+            LastOutputFolder=report.Files.Count>0?profile.OutputFolder:null;LastOutputCount=report.Files.Count;LastOutputFiles=report.Files.ToList();
             status.Text=report.Cancelled?"Вывод отменён · создано PDF: "+report.Files.Count:report.Errors.Count>0?"Создано PDF: "+report.Files.Count+" · ошибок: "+report.Errors.Count:"Готово · создано PDF: "+report.Files.Count;
             if(report.Errors.Count>0)
                 Notify("Создано PDF: "+report.Files.Count+".\n\n"+report.Errors[0]+"\n\nПодробный отчёт:\n"+reportPath,"Вывод завершён с ошибками");

@@ -28,6 +28,13 @@ namespace CadBatch.Desktop
             return new Border{Width=size,Height=size,CornerRadius=new CornerRadius(size*0.26),Background=new LinearGradientBrush(Color.FromRgb(10,132,255),Color.FromRgb(0,92,196),90),Child=icon,
                 Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=18,ShadowDepth=4,Direction=270,Opacity=0.18,Color=Color.FromRgb(0,80,180)}};
         }
+        // Follows the text size chosen in the main window: the whole window grows, not only the letters.
+        public static void Scale(Window window)
+        {
+            double scale=UiPreferences.Load(UiPreferences.DefaultPath).TextScale;ModernDialog.TextScale=scale;if(scale<1.001)return;
+            if(window.Content is FrameworkElement content)content.LayoutTransform=new ScaleTransform(scale,scale);
+            window.Width=Math.Min(window.Width*scale,SystemParameters.WorkArea.Width-20);window.Height=Math.Min(window.Height*scale,SystemParameters.WorkArea.Height-20);window.MinWidth=Math.Min(window.MinWidth*scale,window.Width);window.MinHeight=Math.Min(window.MinHeight*scale,window.Height);
+        }
         public static void Open(string target){try{Process.Start(new ProcessStartInfo(target){UseShellExecute=true});}catch(Exception ex){ModernDialog.Message(IntPtr.Zero,"Не удалось открыть",ex.Message,DialogKind.Warning);}}
         public static void OpenGuide(){string file=Path.Combine(AppContext.BaseDirectory,"Help","Start.html");Open(File.Exists(file)?file:UpdateClient.ReleasesPage);}
         // The main window opened from the lobby always gets the application menu: reconnect and updates.
@@ -44,7 +51,7 @@ namespace CadBatch.Desktop
     {
         private readonly ComboBox sessions=new ComboBox{DisplayMemberPath="Description",Margin=new Thickness(0,0,0,12)};
         private readonly TextBlock updateState=UiTheme.Hint("");
-        private readonly CheckBox autoUpdates=new CheckBox{Content="Проверять обновления при запуске",FontSize=12};
+        private readonly CheckBox autoUpdates=new CheckBox{Content="Проверять обновления при запуске",FontSize=14};
         private readonly Button connect=UiTheme.Button("Подключиться",UiTheme.IconPlug,"Primary");
         private readonly StackPanel checklist=new StackPanel(),sessionArea=new StackPanel();
         private readonly DispatcherTimer poll=new DispatcherTimer{Interval=TimeSpan.FromSeconds(2)};
@@ -56,15 +63,15 @@ namespace CadBatch.Desktop
         private sealed class Preferences{public bool CheckUpdates {get;set;}=true;}
         public ConnectionWindow()
         {
-            Title="CAD Batch";Width=600;Height=760;MinWidth=520;MinHeight=600;WindowStartupLocation=WindowStartupLocation.CenterScreen;UiTheme.Apply(this);
+            Title="CAD Batch";Width=640;Height=800;MinWidth=540;MinHeight=600;WindowStartupLocation=WindowStartupLocation.CenterScreen;UiTheme.Apply(this);
             var stack=new StackPanel{Margin=new Thickness(36,36,36,24),MaxWidth=520};Content=new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Background=UiTheme.Canvas};
             var icon=DesktopUi.AppIcon(68);icon.HorizontalAlignment=HorizontalAlignment.Center;icon.Margin=new Thickness(0,0,0,16);stack.Children.Add(icon);
             var title=UiTheme.Title("CAD Batch",30);title.HorizontalAlignment=HorizontalAlignment.Center;stack.Children.Add(title);
-            var lead=UiTheme.Text("Чертежи AutoCAD — в готовые PDF за пару кликов",14,null,UiTheme.Secondary);lead.HorizontalAlignment=HorizontalAlignment.Center;lead.Margin=new Thickness(0,6,0,26);stack.Children.Add(lead);
+            var lead=UiTheme.Text("Чертежи AutoCAD — в готовые PDF за пару кликов",16,null,UiTheme.Secondary);lead.HorizontalAlignment=HorizontalAlignment.Center;lead.Margin=new Thickness(0,6,0,26);stack.Children.Add(lead);
 
-            var card=new StackPanel();card.Children.Add(UiTheme.Title("Подключение к AutoCAD",18));card.Children.Add(UiTheme.Hint("Три шага — и можно работать. Окно само заметит, когда AutoCAD будет готов.",new Thickness(0,4,0,14)));
+            var card=new StackPanel();card.Children.Add(UiTheme.Title("Подключение к AutoCAD",21));card.Children.Add(UiTheme.Hint("Три шага — и можно работать. Окно само заметит, когда AutoCAD будет готов.",new Thickness(0,4,0,14)));
             card.Children.Add(checklist);card.Children.Add(sessionArea);
-            connect.Height=44;connect.FontSize=14;connect.Margin=new Thickness(0,6,0,0);connect.Click+=async(s,e)=>await ConnectAsync();card.Children.Add(connect);
+            connect.Height=52;connect.FontSize=16;connect.Margin=new Thickness(0,6,0,0);connect.Click+=async(s,e)=>await ConnectAsync();card.Children.Add(connect);
             stack.Children.Add(UiTheme.Card(card,22));
 
             var links=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,2,0,18)};
@@ -72,11 +79,12 @@ namespace CadBatch.Desktop
             var guide=UiTheme.Button("Инструкция",UiTheme.IconHelp,"Plain");guide.Click+=(s,e)=>DesktopUi.OpenGuide();links.Children.Add(guide);
             var repo=UiTheme.Button("GitHub",UiTheme.IconLink,"Plain");repo.Click+=(s,e)=>DesktopUi.Open("https://github.com/"+UpdateClient.Repository);links.Children.Add(repo);stack.Children.Add(links);
 
-            var updates=new DockPanel();var check=UiTheme.Button("Проверить",UiTheme.IconRefresh,"Outline");check.Click+=(s,e)=>DesktopUi.OpenUpdates(this);DockPanel.SetDock(check,Dock.Right);updates.Children.Add(check);
-            var info=new StackPanel{VerticalAlignment=VerticalAlignment.Center};info.Children.Add(UiTheme.Text("Версия "+ProductInfo.Version,13,FontWeights.SemiBold));updateState.Text="Обновления приходят из GitHub Releases.";updateState.Margin=new Thickness(0,2,0,6);info.Children.Add(updateState);info.Children.Add(autoUpdates);updates.Children.Add(info);
+            var updates=new DockPanel();var check=UiTheme.Button("Проверить",UiTheme.IconRefresh,"Outline");check.VerticalAlignment=VerticalAlignment.Center;check.Click+=(s,e)=>DesktopUi.OpenUpdates(this);DockPanel.SetDock(check,Dock.Right);updates.Children.Add(check);
+            var info=new StackPanel{VerticalAlignment=VerticalAlignment.Center};info.Children.Add(UiTheme.Text("Версия "+ProductInfo.Version,15,FontWeights.SemiBold));updateState.Text="Обновления приходят из GitHub Releases.";updateState.Margin=new Thickness(0,2,0,6);info.Children.Add(updateState);info.Children.Add(autoUpdates);updates.Children.Add(info);
             stack.Children.Add(UiTheme.Card(updates,18));
             try{autoUpdates.IsChecked=!File.Exists(preferences)||(System.Text.Json.JsonSerializer.Deserialize<Preferences>(File.ReadAllText(preferences))?.CheckUpdates??true);}catch{autoUpdates.IsChecked=true;}
             autoUpdates.Click+=(s,e)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(preferences)!);File.WriteAllText(preferences,System.Text.Json.JsonSerializer.Serialize(new Preferences{CheckUpdates=autoUpdates.IsChecked==true}));}catch(IOException){}catch(UnauthorizedAccessException){}};
+            DesktopUi.Scale(this);
             sessions.SelectionChanged+=(s,e)=>UpdateConnect();
             poll.Tick+=(s,e)=>Refresh();
             Loaded+=async(s,e)=>{Refresh();poll.Start();if(autoUpdates.IsChecked==true)await BackgroundUpdateCheck();};
@@ -110,12 +118,12 @@ namespace CadBatch.Desktop
         private static UIElement Step(int number,string title,string text,bool done,(string Label,Action Action)? action,bool last=false)
         {
             var row=new DockPanel{Margin=new Thickness(0,0,0,last?14:12)};
-            var mark=new Border{Width=26,Height=26,CornerRadius=new CornerRadius(13),Background=done?UiTheme.Success:UiTheme.Fill,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,1,12,0),
-                Child=done?(UIElement)UiTheme.Icon(UiTheme.IconCheck,12,Brushes.White):new TextBlock{Text=number.ToString(),FontSize=12,FontWeight=FontWeights.SemiBold,Foreground=UiTheme.Secondary,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
+            var mark=new Border{Width=30,Height=30,CornerRadius=new CornerRadius(15),Background=done?UiTheme.Success:UiTheme.Fill,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,1,12,0),
+                Child=done?(UIElement)UiTheme.Icon(UiTheme.IconCheck,14,Brushes.White):new TextBlock{Text=number.ToString(),FontSize=14,FontWeight=FontWeights.SemiBold,Foreground=UiTheme.Secondary,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
             if(done)((TextBlock)mark.Child).HorizontalAlignment=HorizontalAlignment.Center;
             DockPanel.SetDock(mark,Dock.Left);row.Children.Add(mark);
             if(action!=null){var b=UiTheme.Button(action.Value.Label,null,"Outline");b.VerticalAlignment=VerticalAlignment.Center;b.Margin=new Thickness(12,0,0,0);var run=action.Value.Action;b.Click+=(s,e)=>run();DockPanel.SetDock(b,Dock.Right);row.Children.Add(b);}
-            var texts=new StackPanel();texts.Children.Add(UiTheme.Text(title,14,FontWeights.SemiBold));texts.Children.Add(UiTheme.Hint(text,new Thickness(0,2,0,0)));row.Children.Add(texts);
+            var texts=new StackPanel();texts.Children.Add(UiTheme.Text(title,16,FontWeights.SemiBold));texts.Children.Add(UiTheme.Hint(text,new Thickness(0,2,0,0)));row.Children.Add(texts);
             return row;
         }
         private async Task ConnectAsync()
@@ -190,6 +198,7 @@ namespace CadBatch.Desktop
             DockPanel.SetDock(head,Dock.Top);root.Children.Add(head);
             var top=new StackPanel();top.Children.Add(status);top.Children.Add(progress);DockPanel.SetDock(top,Dock.Top);root.Children.Add(top);
             details.FontSize=12.5;var notes=new Border{Child=new ScrollViewer{Content=details,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(14,12,14,12)},Background=Brushes.White,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(12),Margin=new Thickness(0,12,0,0)};root.Children.Add(notes);
+            DesktopUi.Scale(this);
             download.Click+=async(s,e)=>await DownloadAsync();install.Click+=async(s,e)=>await InstallAsync();
             Loaded+=async(s,e)=>await CheckAsync();Closing+=(s,e)=>{if(installing){e.Cancel=true;return;}cancellation.Cancel();};
         }
