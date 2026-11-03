@@ -8,7 +8,7 @@ namespace CadBatch.Core
 {
     public static class ProductInfo
     {
-        public const string Version="0.4.0";
+        public const string Version="0.5.0";
     }
 
     public sealed class OperationTrace

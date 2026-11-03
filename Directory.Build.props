@@ -6,7 +6,7 @@
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
     <UseSharedCompilation>false</UseSharedCompilation>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <Authors>CAD Batch Project</Authors>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>

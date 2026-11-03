@@ -23,4 +23,4 @@ with zipfile.ZipFile(archive) as z:
   assert z.read(name)==(release/Path(*name.split('/')[1:])).read_bytes(),name
 setup=downloads/('CadBatch-Setup-'+v+'.exe');assert setup.read_bytes()[:2]==b'MZ'
 summary.update(selfContained=True,runtime='10.0.14',portableBytes=archive.stat().st_size,installerBytes=setup.stat().st_size,sha256=hashlib.sha256(setup.read_bytes()).hexdigest(),auditPassed=True)
-(root/'artifacts/verification/release-0.4.0.json').write_text(json.dumps(summary,indent=2),encoding='utf-8');print(json.dumps(summary,indent=2))
+(root/'artifacts/verification'/('release-'+v+'.json')).write_text(json.dumps(summary,indent=2),encoding='utf-8');print(json.dumps(summary,indent=2))
