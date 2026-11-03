@@ -43,7 +43,7 @@ namespace CadBatch.UI
                 if(i>0)list.Children.Add(UiTheme.Separator());
                 var check=new CheckBox{Content=new TextBlock{Text=fields[i].Label,TextWrapping=TextWrapping.Wrap},IsChecked=fields[i].Value,Margin=new Thickness(14,11,14,11)};checks.Add(check);list.Children.Add(check);
             }
-            UIElement content=new Border{Child=new ScrollViewer{Content=list,MaxHeight=380,VerticalScrollBarVisibility=ScrollBarVisibility.Auto},Background=Brushes.White,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10)};
+            UIElement content=new Border{Child=new ScrollViewer{Content=list,MaxHeight=380,VerticalScrollBarVisibility=ScrollBarVisibility.Auto},Background=UiTheme.Surface,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10)};
             if(fields.Length>4)
             {
                 var all=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,0,8)};
@@ -124,7 +124,7 @@ namespace CadBatch.UI
                 if(cancel!=null){var no=UiTheme.Button(cancel);no.IsCancel=true;no.MinWidth=96;DockPanel.SetDock(no,Dock.Right);buttons.Children.Add(no);}
                 if(extra!=null){var more=UiTheme.Button(extra.Value.Label,null,"Plain");more.Click+=(s,e)=>{try{extra.Value.Action(this);}catch(Exception ex){Message(new WindowInteropHelper(this).Handle,"Не получилось",ex.Message,DialogKind.Warning);}};DockPanel.SetDock(more,Dock.Left);buttons.Children.Add(more);}
                 root.Children.Add(buttons);
-                var surface=new Border{Child=root,Background=Brushes.White,CornerRadius=new CornerRadius(16),BorderBrush=new SolidColorBrush(Color.FromArgb(40,0,0,0)),BorderThickness=new Thickness(1),Margin=new Thickness(16),
+                var surface=new Border{Child=root,Background=UiTheme.Surface,CornerRadius=new CornerRadius(16),BorderBrush=new SolidColorBrush(Color.FromArgb(40,0,0,0)),BorderThickness=new Thickness(1),Margin=new Thickness(16),
                     Effect=new DropShadowEffect{BlurRadius=28,ShadowDepth=6,Direction=270,Opacity=0.22}};
                 surface.MouseLeftButtonDown+=(s,e)=>{if(e.ButtonState==MouseButtonState.Pressed&&!(e.OriginalSource is TextBox))try{DragMove();}catch(InvalidOperationException){}};
                 if(scale>1.001)root.LayoutTransform=new ScaleTransform(scale,scale);

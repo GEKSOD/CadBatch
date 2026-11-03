@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -15,6 +15,8 @@ namespace CadBatch.UI
         public static readonly string[] ScaleNames={"Обычный текст","Крупный текст","Очень крупный текст"};
         [DataMember] public double TextScale {get;set;}=1;
         [DataMember] public bool Advanced {get;set;}
+        [DataMember] public bool SeenIntro {get;set;}
+        [DataMember] public System.Collections.Generic.List<string>? RecentJobs {get;set;}
         public static string DefaultPath=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"CadBatch","interface.json");
         public static UiPreferences Load(string path)
         {

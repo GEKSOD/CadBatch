@@ -44,24 +44,31 @@ namespace CadBatch.Desktop
             if(args.Length==2&&args[0]=="--look-smoke")
             {
                 // Renders simple mode, advanced mode and the largest text size for visual review.
-                Directory.CreateDirectory(args[1]);var look=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(args[1],"look-profile.json"));
+                Directory.CreateDirectory(args[1]);var look=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(args[1],"look-profile.json")){ShowIntroOnStart=false};
                 look.ContentRendered+=async(s,e)=>{try{await look.SmokeAsync(Path.Combine(args[1],"simple.png"));
                     look.PreviewLook(true,1);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"advanced.png"));look.RenderCard(Path.Combine(args[1],"card.png"));
                     var capture=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(700)};capture.Tick+=(_,__)=>{capture.Stop();var sheet=System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().FirstOrDefault(w=>w!=look);if(sheet!=null){UiTheme.Snapshot((System.Windows.FrameworkElement)sheet.Content,Path.Combine(args[1],"done.png"));sheet.Close();}};capture.Start();
                     ModernDialog.Actions(new System.Windows.Interop.WindowInteropHelper(look).Handle,"Готово!","Сохранено PDF-файлов: 12\nПапка: D:\\Проекты\\АР\\PDF",DialogKind.Success,"Открыть папку","Открыть первый PDF","Закрыть");
+                    File.WriteAllLines(Path.Combine(args[1],"accessibility.txt"),look.AccessibilityReport());
+                    look.PreviewSelection();await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"selected.png"));File.WriteAllText(Path.Combine(args[1],"selected.txt"),look.SelectedRowForeground());
+                    look.PreviewProblems();await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"problems.png"));
+                    var intro=new IntroWindow(IntPtr.Zero,1);intro.Show();await intro.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);UiTheme.Snapshot((System.Windows.FrameworkElement)intro.Content,Path.Combine(args[1],"intro.png"));intro.Close();
+                    look.WindowState=System.Windows.WindowState.Normal;look.Width=1090;look.Height=610;look.PreviewLook(false,1);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.PreviewLook(false,1);look.RenderTo(Path.Combine(args[1],"compact.png"));
+                    look.PreviewTab(1);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"compact-save.png"));look.PreviewTab(0);
+                    look.WindowState=System.Windows.WindowState.Maximized;
                     look.PreviewLook(false,1.3);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"large.png"));}
                     catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"look.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{look.Close();}};app.Run(look);return;
             }
             if(args.Length==2&&args[0]=="--empty-smoke")
             {
-                var empty=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!,"empty-profile.json"));
+                var empty=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!,"empty-profile.json")){ShowIntroOnStart=false};
                 empty.ContentRendered+=async(s,e)=>{try{await empty.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);empty.RenderTo(args[1]);
                     // Renders the plan sheet that precedes every PDF batch, then dismisses it.
                     var capture=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(700)};capture.Tick+=(_,__)=>{capture.Stop();var sheet=System.Windows.Application.Current.Windows.OfType<System.Windows.Window>().FirstOrDefault(w=>w!=empty);if(sheet!=null){var root=(System.Windows.FrameworkElement)sheet.Content;var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)root.ActualWidth,(int)root.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(root);var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));using(var file=File.Create(args[1]+".dialog.png"))encoder.Save(file);sheet.Close();}};capture.Start();
                     ModernDialog.Plan(new System.Windows.Interop.WindowInteropHelper(empty).Handle,"Вывод PDF","Проверьте план. Вывод можно отменить в любой момент, готовые файлы сохранятся.",new[]{("PDF-файлов","12"),("Страниц","12"),("Папка",@"D:\Проекты\АР\PDF"),("Плоттер","DWG To PDF.pc3"),("Цвет","Цвета чертежа")},"Файлы:\nАР_001_A1.pdf\nАР_002_A2.pdf","Создать 12 PDF");}catch(Exception ex){File.WriteAllText(args[1]+".error.txt",ex.ToString());Environment.ExitCode=1;}finally{empty.Close();}};app.Run(empty);return;
             }
             var settings=args.Length==2&&args[0]=="--smoke"?Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!,"smoke-profile.json"):Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"CadBatch","demo-profile.json");
-            var window=new BatchWindow.FluentWindow(new DemoHost(),settings);
+            var window=new BatchWindow.FluentWindow(new DemoHost(),settings){ShowIntroOnStart=!(args.Length==2&&args[0]=="--smoke")};
             if(args.Length==2&&args[0]=="--smoke")window.ContentRendered+=async(s,e)=>
             {
                 try{await window.SmokeAsync(args[1]);}

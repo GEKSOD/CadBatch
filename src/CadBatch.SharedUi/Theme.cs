@@ -12,10 +12,14 @@ namespace CadBatch.UI
     public static class UiTheme
     {
         public static readonly Color InkColor=Color.FromRgb(29,29,31),AccentColor=Color.FromRgb(0,113,227);
-        public static readonly Brush Ink=Freeze(InkColor),Secondary=Freeze(Color.FromRgb(81,81,84)),Tertiary=Freeze(Color.FromRgb(110,110,115)),
-            Canvas=Freeze(Color.FromRgb(245,245,247)),Surface=Brushes.White,Line=Freeze(Color.FromRgb(229,229,234)),Fill=Freeze(Color.FromRgb(232,232,237)),
-            Accent=Freeze(AccentColor),AccentSoft=Freeze(Color.FromRgb(232,242,253)),Success=Freeze(Color.FromRgb(36,138,61)),SuccessSoft=Freeze(Color.FromRgb(232,247,237)),
-            Warning=Freeze(Color.FromRgb(178,80,0)),WarningSoft=Freeze(Color.FromRgb(255,244,229)),Danger=Freeze(Color.FromRgb(215,0,21)),DangerSoft=Freeze(Color.FromRgb(253,236,238));
+        // Windows high contrast: every colour comes from the system palette and the default control templates stay in charge.
+        public static readonly bool HighContrast=SystemParameters.HighContrast||Environment.GetEnvironmentVariable("CADBATCH_HIGH_CONTRAST")=="1";
+        public static readonly Brush Ink=Pick(SystemColors.WindowTextBrush,InkColor),Secondary=Pick(SystemColors.WindowTextBrush,Color.FromRgb(81,81,84)),Tertiary=Pick(SystemColors.GrayTextBrush,Color.FromRgb(110,110,115)),
+            Canvas=Pick(SystemColors.WindowBrush,Color.FromRgb(245,245,247)),Surface=Pick(SystemColors.WindowBrush,Colors.White),Line=Pick(SystemColors.WindowTextBrush,Color.FromRgb(229,229,234)),Fill=Pick(SystemColors.ControlBrush,Color.FromRgb(232,232,237)),
+            Accent=Pick(SystemColors.HighlightBrush,AccentColor),AccentSoft=Pick(SystemColors.WindowBrush,Color.FromRgb(232,242,253)),OnAccent=Pick(SystemColors.HighlightTextBrush,Colors.White),
+            Success=Pick(SystemColors.WindowTextBrush,Color.FromRgb(36,138,61)),SuccessSoft=Pick(SystemColors.WindowBrush,Color.FromRgb(232,247,237)),
+            Warning=Pick(SystemColors.WindowTextBrush,Color.FromRgb(178,80,0)),WarningSoft=Pick(SystemColors.WindowBrush,Color.FromRgb(255,244,229)),Danger=Pick(SystemColors.WindowTextBrush,Color.FromRgb(215,0,21)),DangerSoft=Pick(SystemColors.WindowBrush,Color.FromRgb(253,236,238));
+        private static Brush Pick(Brush system,Color color)=>HighContrast?system:Freeze(color);
         public static readonly FontFamily Font=new FontFamily("Segoe UI Variable Text, Segoe UI"),Display=new FontFamily("Segoe UI Variable Display, Segoe UI"),Icons=new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
         public const string IconSearch="",IconFolder="",IconOpen="",IconDocument="",IconCheck="",IconClose="",IconSettings="",
             IconHelp="",IconRefresh="",IconDownload="",IconInfo="",IconWarning="",IconError="",IconMore="",IconLocate="",
@@ -24,14 +28,14 @@ namespace CadBatch.UI
 
         public static ResourceDictionary Resources(bool modern=true)
         {
-            var dictionary=(ResourceDictionary)XamlReader.Parse(Xaml.Replace("{MODERN}",modern?"<ResourceDictionary.MergedDictionaries><ui:ThemeResources/><ui:XamlControlsResources/></ResourceDictionary.MergedDictionaries>":""));
+            var dictionary=(ResourceDictionary)XamlReader.Parse((HighContrast?ContrastXaml:Xaml).Replace("{MODERN}",modern?"<ResourceDictionary.MergedDictionaries><ui:ThemeResources/><ui:XamlControlsResources/></ResourceDictionary.MergedDictionaries>":""));
             return dictionary;
         }
         public static void Apply(Window window,bool modern=true)
         {
             window.Resources=Resources(modern);window.FontFamily=Font;window.FontSize=15;window.Foreground=Ink;window.Background=Canvas;
             TextOptions.SetTextFormattingMode(window,TextFormattingMode.Display);UseLayoutRounding(window);
-            if(modern)ModernWpf.ThemeManager.SetRequestedTheme(window,ModernWpf.ElementTheme.Light);
+            if(modern&&!HighContrast)ModernWpf.ThemeManager.SetRequestedTheme(window,ModernWpf.ElementTheme.Light);
         }
         private static void UseLayoutRounding(Window window){window.UseLayoutRounding=true;window.SnapsToDevicePixels=true;}
 
@@ -52,7 +56,7 @@ namespace CadBatch.UI
             return new Border{Child=row,Background=background,CornerRadius=new CornerRadius(20),Padding=new Thickness(12,6,13,7),VerticalAlignment=VerticalAlignment.Center};
         }
         public static Border Step(int number,bool active=true)=>new Border{Width=28,Height=28,CornerRadius=new CornerRadius(14),Background=active?Accent:Fill,VerticalAlignment=VerticalAlignment.Center,
-            Child=new TextBlock{Text=number.ToString(),Foreground=active?Brushes.White:Secondary,FontSize=14,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
+            Child=new TextBlock{Text=number.ToString(),Foreground=active?OnAccent:Secondary,FontSize=14,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
         public static FrameworkElement StepHeader(int number,string title,string subtitle,out Border badge)
         {
             var stack=new StackPanel{Margin=new Thickness(0,0,0,16)};var row=new StackPanel{Orientation=Orientation.Horizontal};badge=Step(number);row.Children.Add(badge);
@@ -61,7 +65,8 @@ namespace CadBatch.UI
         }
         public static Button Button(string text,string? glyph=null,string style="")
         {
-            var button=new Button{Content=Content(text,glyph)};if(style.Length>0)button.SetResourceReference(FrameworkElement.StyleProperty,style);return button;
+            var button=new Button{Content=Content(text,glyph)};if(style.Length>0)button.SetResourceReference(FrameworkElement.StyleProperty,style);
+            if(text.Length>0)System.Windows.Automation.AutomationProperties.SetName(button,text);return button;
         }
         public static object Content(string text,string? glyph)
         {
@@ -78,6 +83,17 @@ namespace CadBatch.UI
         }
         public static Border Separator()=>new Border{Height=1,Background=Line,Margin=new Thickness(0)};
 
+        private const string ContrastXaml=@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' xmlns:ui='http://schemas.modernwpf.com/2019'>
+{MODERN}
+<Style x:Key='Primary' TargetType='Button'><Setter Property='Padding' Value='18,9'/><Setter Property='MinHeight' Value='42'/><Setter Property='FontWeight' Value='Bold'/><Setter Property='BorderThickness' Value='2'/></Style>
+<Style x:Key='Plain' TargetType='Button'><Setter Property='Padding' Value='10,6'/><Setter Property='MinHeight' Value='38'/></Style>
+<Style x:Key='Outline' TargetType='Button'><Setter Property='Padding' Value='16,9'/><Setter Property='MinHeight' Value='42'/></Style>
+<Style x:Key='Danger' TargetType='Button'><Setter Property='Padding' Value='16,9'/><Setter Property='MinHeight' Value='42'/></Style>
+<Style x:Key='Chip' TargetType='Button'><Setter Property='Padding' Value='10,4'/><Setter Property='MinHeight' Value='34'/><Setter Property='Margin' Value='0,0,7,7'/></Style>
+<Style x:Key='Square' TargetType='Button'><Setter Property='Width' Value='42'/><Setter Property='Height' Value='42'/></Style>
+<Style x:Key='Toggle' TargetType='CheckBox'><Setter Property='MinWidth' Value='24'/><Setter Property='MinHeight' Value='24'/></Style>
+<Style x:Key='SheetCheck' TargetType='CheckBox'><Setter Property='HorizontalAlignment' Value='Center'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
+</ResourceDictionary>";
         private const string Xaml=@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' xmlns:ui='http://schemas.modernwpf.com/2019'>
 {MODERN}
 <SolidColorBrush x:Key='Ink' Color='#1D1D1F'/><SolidColorBrush x:Key='Secondary' Color='#6E6E73'/><SolidColorBrush x:Key='Line' Color='#E5E5EA'/>
@@ -241,16 +257,19 @@ namespace CadBatch.UI
   </ControlTemplate></Setter.Value></Setter>
 </Style>
 <Style TargetType='DataGridCell'>
+  <!-- The system theme paints selected cell text white; on the light selection colour that text disappeared. -->
+  <Setter Property='Foreground' Value='#1D1D1F'/><Setter Property='Background' Value='Transparent'/>
   <Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='10,0'/><Setter Property='FocusVisualStyle' Value='{x:Null}'/>
   <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='DataGridCell'>
-    <Border Background='Transparent' Padding='{TemplateBinding Padding}'><ContentPresenter VerticalAlignment='Center'/></Border>
+    <Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}' Margin='0,0,-1,0' SnapsToDevicePixels='True'><ContentPresenter VerticalAlignment='Center'/></Border>
   </ControlTemplate></Setter.Value></Setter>
+  <Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Foreground' Value='#1D1D1F'/><Setter Property='Background' Value='#D6E8FC'/></Trigger></Style.Triggers>
 </Style>
 <Style TargetType='DataGridRow'>
   <Setter Property='Background' Value='White'/><Setter Property='Foreground' Value='#1D1D1F'/>
   <Style.Triggers>
     <Trigger Property='IsMouseOver' Value='True'><Setter Property='Background' Value='#F7F7FA'/></Trigger>
-    <Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#E8F2FD'/></Trigger>
+    <Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#D6E8FC'/><Setter Property='Foreground' Value='#1D1D1F'/></Trigger>
   </Style.Triggers>
 </Style>
 </ResourceDictionary>";

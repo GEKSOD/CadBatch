@@ -34,7 +34,7 @@ class WpfFrameworkSmoke : IBatchHost
                 {for(int n=0;n<1200&&!File.Exists(Path.Combine(args[0],"stop"));n++)System.Threading.Thread.Sleep(100);}
                 return 0;
             }
-            System.Windows.Forms.Application.EnableVisualStyles();bool noApp=args.Length>1&&args[1]=="--no-app";var app=noApp?null:new System.Windows.Application();var window=new BatchWindow.FluentWindow(new WpfFrameworkSmoke(),Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0])),"smoke-profile.json"));
+            System.Windows.Forms.Application.EnableVisualStyles();bool noApp=args.Length>1&&args[1]=="--no-app";var app=noApp?null:new System.Windows.Application();var window=new BatchWindow.FluentWindow(new WpfFrameworkSmoke(),Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0])),"smoke-profile.json"));window.ShowIntroOnStart=false;
             window.ContentRendered+=async(s,e)=>{try{await window.SmokeAsync(args[0]);}catch(Exception ex){File.WriteAllText(args[0]+".error.txt",ex.ToString());Environment.ExitCode=1;}finally{window.Close();}};
             if(noApp){window.Closed+=(s,e)=>System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Background);window.Show();System.Windows.Threading.Dispatcher.Run();}else app.Run(window);return Environment.ExitCode;
         }

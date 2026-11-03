@@ -130,13 +130,16 @@ namespace CadBatch.UI
         public string? LastOutputFolder {get;private set;}
         public int LastOutputCount {get;private set;}
         public List<string> LastOutputFiles {get;private set;}=new List<string>();
+        // The visible shell explains errors in plain words (returns true when it showed them) and remembers jobs.
+        private Func<Exception,bool>? ErrorPresenter;
+        private Action<string>? JobRemembered;
         private async Task RunAsync(Func<Task> action)
         {
             if(running!=null)return;
             running=new CancellationTokenSource();search.Enabled=false;pdf.Enabled=singlePdf.Enabled=show.Enabled=false;cancel.Enabled=true;toolsMenu.Enabled=false;grid.Enabled=false;findBox.Enabled=outputBox.Enabled=false;workspaceToolbar.Enabled=false;
             try { await action(); }
             catch(OperationCanceledException) { status.Text="Операция отменена."; }
-            catch(Exception ex) { diagnostics.Add(ex.ToString());status.Text=ex.Message;Notify(ex.Message,ex is ArgumentException?"Проверьте настройки":"Не получилось"); }
+            catch(Exception ex) { diagnostics.Add(ex.ToString());status.Text=ex.Message;if(ErrorPresenter?.Invoke(ex)!=true)Notify(ex.Message,ex is ArgumentException?"Проверьте настройки":"Не получилось"); }
             finally { running.Dispose();running=null;search.Enabled=show.Enabled=true;pdf.Enabled=singlePdf.Enabled=host.CanPlot;cancel.Enabled=false;progress.Value=0;toolsMenu.Enabled=true;grid.Enabled=true;findBox.Enabled=outputBox.Enabled=true;workspaceToolbar.Enabled=true;RefreshSelection();pdf.Enabled=singlePdf.Enabled=host.CanPlot; }
         }
         public Task SearchForSmokeTestAsync()=>RunAsync(ScanAsync);

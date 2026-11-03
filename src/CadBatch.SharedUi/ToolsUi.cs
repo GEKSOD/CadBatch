@@ -130,13 +130,15 @@ namespace CadBatch.UI
         {
             RequireFreshScale();
             grid.EndEdit();ReadProfile();using(var dialog=new SaveFileDialog{Filter="Задание CAD Batch (*.json)|*.json",FileName="Комплект.cadbatch.json"})
-                if(dialog.ShowDialog(DialogOwner)==DialogResult.OK){JobStore.Save(dialog.FileName,JobStore.Capture(profile,frames));status.Text="Задание сохранено: "+dialog.FileName;}
+                if(dialog.ShowDialog(DialogOwner)==DialogResult.OK){JobStore.Save(dialog.FileName,JobStore.Capture(profile,frames));status.Text="Готово · комплект сохранён: "+Path.GetFileName(dialog.FileName);JobRemembered?.Invoke(dialog.FileName);}
         }
-        private async Task LoadJobAsync()
+        private Task LoadJobAsync()=>LoadJobAsync(null);
+        private async Task LoadJobAsync(string? path)
         {
-            using(var dialog=new OpenFileDialog{Filter="Задание CAD Batch (*.json)|*.json"})
+            if(path==null)using(var dialog=new OpenFileDialog{Filter="Задание CAD Batch (*.json)|*.json"}){if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;path=dialog.FileName;}
+            if(!File.Exists(path))throw new FileNotFoundException("Файл комплекта не найден. Возможно, его переместили или удалили.",path);
             {
-                if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;var job=JobStore.Load(dialog.FileName);profile=job.Profile;ApplyProfile();
+                var job=JobStore.Load(path);profile=job.Profile;ApplyProfile();JobRemembered?.Invoke(path);
                 bool all=profile.Search.AllOpenDocuments;ScanResult live;
                 try{profile.Search.AllOpenDocuments=true;live=await host.SearchAsync(profile,running!.Token);}finally{profile.Search.AllOpenDocuments=all;}
                 var restored=JobStore.Restore(job,live.Frames,out var warnings);ReplaceFrames(restored);diagnostics.AddRange(warnings);

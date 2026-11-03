@@ -64,7 +64,19 @@ namespace CadBatch.UI
             private readonly HashSet<DataGridColumn> simpleColumns=new HashSet<DataGridColumn>();
             private Action? reconnect;
             private ReturnBar? returnBar;
-            private const double BodyMinWidth=1000;
+            private const double BodyMinWidth=860,CompactWidth=1150;
+            private WGrid tablePane=null!;private ScrollViewer rightScroll=null!;
+            private readonly StackPanel tabs=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,20,14)};
+            private readonly WButton sheetsTab=UiTheme.Button("Листы",null,"Primary"),saveTab=UiTheme.Button("Сохранение PDF",null,"Outline");
+            private bool compact;private int tab;private TextBlock? tableHint;
+            // Number check above the table and before saving.
+            private readonly Border numberBanner=new Border{Visibility=Visibility.Collapsed};private readonly TextBlock numberText=new TextBlock();private List<DetectedFrame> numberProblems=new List<DetectedFrame>();private int numberCursor;
+            // "Вернуть" after mass changes of the check marks.
+            private readonly WButton undo=UiTheme.Button("Вернуть как было",UiTheme.IconRefresh,"Outline");private Dictionary<DetectedFrame,bool>? undoMarks;private DateTime undoUntil;private string undoText="";
+            // Understandable progress: sheet N of M and the remaining time.
+            private readonly TextBlock progressText=new TextBlock();private DateTime busySince;private bool wasBusy;
+            private readonly StackPanel recent=new StackPanel{Margin=new Thickness(0,26,0,0)};
+            public bool ShowIntroOnStart {get;set;}=true;
             public FluentWindow(IBatchHost host,string? settingsFile=null)
             {
                 c=new BatchWindow(host,settingsFile);c.grid.BindingContext=new Forms.BindingContext();demo=host.Description.IndexOf("ДЕМО",StringComparison.OrdinalIgnoreCase)>=0;
@@ -74,14 +86,16 @@ namespace CadBatch.UI
                 UiTheme.Apply(this);
                 shell.Background=UiTheme.Canvas;shell.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});shell.RowDefinitions.Add(new RowDefinition());shell.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});Content=shell;
                 shell.Children.Add(BuildTopBar(host));
-                body.Margin=new Thickness(24,20,24,8);body.MinWidth=BodyMinWidth;body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(290)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(350)});
+                body.Margin=new Thickness(24,20,24,8);body.MinWidth=BodyMinWidth;body.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.RowDefinitions.Add(new RowDefinition());body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(290)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(350)});
                 // Very large text on a small screen still fits: the work area scrolls sideways instead of squeezing the table.
                 bodyScroll.Content=body;bodyScroll.SizeChanged+=(s,e)=>Relayout();WGrid.SetRow(bodyScroll,1);shell.Children.Add(bodyScroll);
-                BuildSearch();BuildTable();BuildDetails();
+                BuildSearch();BuildTable();BuildDetails();BuildTabs();
+                c.ErrorPresenter=ExplainError;c.JobRemembered=RememberJob;
                 var footer=BuildFooter();WGrid.SetRow(footer,2);shell.Children.Add(footer);
                 ApplyScale();
                 timer.Tick+=(s,e)=>Sync();timer.Start();
-                Loaded+=(s,e)=>{CadInteraction.VisibilityChanged=OnCadInteraction;c.fluentOwner=new DialogWindowOwner(Handle);RestoreView();ApplyMode();Sync();};
+                Loaded+=(s,e)=>{CadInteraction.VisibilityChanged=OnCadInteraction;c.fluentOwner=new DialogWindowOwner(Handle);RestoreView();ApplyMode();RenderRecent();Sync();};
+                ContentRendered+=(s,e)=>{if(ShowIntroOnStart&&!prefs.SeenIntro)Dispatcher.BeginInvoke(new Action(ShowIntro),DispatcherPriority.ContextIdle);};
                 Activated+=(s,e)=>CloseReturnBar();
                 Closing+=(s,e)=>{if(c.running!=null){c.running.Cancel();e.Cancel=true;c.status.Text="Отмена задания. Дождитесь завершения операции.";return;}CommitGrid();SaveView();try{c.ReadProfile();ProfileStore.Save(c.profilePath,c.profile);}catch(Exception ex){c.diagnostics.Add(ex.Message);}};
                 Closed+=(s,e)=>{isClosed=true;timer.Stop();CloseReturnBar();CadInteraction.VisibilityChanged=null;c.Dispose();};
@@ -96,14 +110,14 @@ namespace CadBatch.UI
 
             private UIElement BuildTopBar(IBatchHost host)
             {
-                var bar=new Border{Background=Brushes.White,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(0,0,0,1),Padding=new Thickness(20,8,16,8)};
+                var bar=new Border{Background=UiTheme.Surface,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(0,0,0,1),Padding=new Thickness(20,8,16,8)};
                 var top=new DockPanel();bar.Child=top;
                 var brand=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,18,0),VerticalAlignment=VerticalAlignment.Center};
-                var glyph=UiTheme.Icon(UiTheme.IconDocument,16,Brushes.White);glyph.HorizontalAlignment=HorizontalAlignment.Center;
+                var glyph=UiTheme.Icon(UiTheme.IconDocument,16,UiTheme.OnAccent);glyph.HorizontalAlignment=HorizontalAlignment.Center;
                 brand.Children.Add(new Border{Width=32,Height=32,CornerRadius=new CornerRadius(9),Background=new LinearGradientBrush(Color.FromRgb(10,132,255),Color.FromRgb(0,98,204),90),Child=glyph});
                 var name=UiTheme.Text("CAD Batch",18,FontWeights.SemiBold);name.Margin=new Thickness(10,0,0,1);name.VerticalAlignment=VerticalAlignment.Center;brand.Children.Add(name);top.Children.Add(brand);
 
-                var help=UiTheme.Button("Помощь",UiTheme.IconHelp,"Outline");help.Click+=(s,e)=>ShowGuide();help.Margin=new Thickness(10,0,0,0);DockPanel.SetDock(help,WDock.Right);top.Children.Add(help);
+                var help=UiTheme.Button("Помощь",UiTheme.IconHelp,"Outline");help.ToolTip="Знакомство с программой: три шага";help.Click+=(s,e)=>ShowIntro();help.Margin=new Thickness(10,0,0,0);DockPanel.SetDock(help,WDock.Right);top.Children.Add(help);
                 var badge=new ContentControl{VerticalAlignment=VerticalAlignment.Center,ToolTip=host.Description,Margin=new Thickness(14,0,0,0)};DockPanel.SetDock(badge,WDock.Right);top.Children.Add(badge);
                 bool? lastState=null;refresh.Add(()=>{bool ok=host.CanPlot;if(lastState==ok)return;lastState=ok;badge.Content=ok?UiTheme.Pill("AutoCAD подключён",UiTheme.Success,UiTheme.SuccessSoft,"●"):demo?UiTheme.Pill("Демо-режим",UiTheme.Warning,UiTheme.WarningSoft,"●"):UiTheme.Pill("Нет связи с AutoCAD",UiTheme.Danger,UiTheme.DangerSoft,"●");});
 
@@ -114,7 +128,8 @@ namespace CadBatch.UI
                 modeRow.MouseLeftButtonUp+=(s,e)=>{if(!IsInside((DependencyObject)e.OriginalSource,mode))mode.IsChecked=mode.IsChecked!=true;};
                 mode.Checked+=(s,e)=>SetMode(true);mode.Unchecked+=(s,e)=>SetMode(false);DockPanel.SetDock(modeRow,WDock.Right);top.Children.Add(modeRow);
 
-                var size=new ComboBox{ItemsSource=UiPreferences.ScaleNames,SelectedIndex=Array.IndexOf(UiPreferences.Scales,prefs.TextScale),MinWidth=200,VerticalAlignment=VerticalAlignment.Center,ToolTip="Размер текста и кнопок во всех окнах CAD Batch"};
+                var size=new ComboBox{Name="TextSize",ItemsSource=UiPreferences.ScaleNames,SelectedIndex=Array.IndexOf(UiPreferences.Scales,prefs.TextScale),MinWidth=200,VerticalAlignment=VerticalAlignment.Center,ToolTip="Размер текста и кнопок во всех окнах CAD Batch"};
+                System.Windows.Automation.AutomationProperties.SetName(size,"Размер текста");System.Windows.Automation.AutomationProperties.SetName(search,"Поиск листа");
                 size.SelectionChanged+=(s,e)=>{if(size.SelectedIndex<0)return;prefs.TextScale=UiPreferences.Scales[size.SelectedIndex];prefs.Save(prefsPath);ApplyScale();};
                 var sizeRow=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(14,0,0,0)};var sizeIcon=UiTheme.Text("Aa",16,FontWeights.SemiBold,UiTheme.Secondary);sizeIcon.VerticalAlignment=VerticalAlignment.Center;sizeIcon.Margin=new Thickness(0,0,8,0);sizeRow.Children.Add(sizeIcon);sizeRow.Children.Add(size);
                 DockPanel.SetDock(sizeRow,WDock.Right);top.Children.Add(sizeRow);
@@ -122,11 +137,12 @@ namespace CadBatch.UI
                 menus.Background=Brushes.Transparent;menus.FontSize=14.5;menus.VerticalAlignment=VerticalAlignment.Center;
                 foreach(var item in c.toolsMenu.Items.OfType<Forms.ToolStripMenuItem>()){var converted=ConvertMenu(item);toolMenus.Add(converted);menus.Items.Add(converted);}
                 var helpMenu=new MenuItem{Header="Справка",Foreground=UiTheme.Ink};
-                helpMenu.Items.Add(Command("Как начать работу",ShowGuide));helpMenu.Items.Add(Command("Горячие клавиши",ShowShortcuts));helpMenu.Items.Add(new System.Windows.Controls.Separator());helpMenu.Items.Add(Command("Диагностика",()=>c.ShowDiagnostics()));
+                helpMenu.Items.Add(Command("Знакомство с программой",ShowIntro));helpMenu.Items.Add(Command("Подробная инструкция",ShowGuide));helpMenu.Items.Add(Command("Горячие клавиши",ShowShortcuts));helpMenu.Items.Add(new System.Windows.Controls.Separator());helpMenu.Items.Add(Command("Диагностика",()=>c.ShowDiagnostics()));
                 menus.Items.Add(helpMenu);top.Children.Add(menus);
                 return bar;
             }
             private static MenuItem Command(string text,Action action){var item=new MenuItem{Header=text,Foreground=UiTheme.Ink};item.Click+=(s,e)=>action();return item;}
+            private static MenuItem Command(string text,Func<Task> action){var item=new MenuItem{Header=text,Foreground=UiTheme.Ink};item.Click+=async(s,e)=>await action();return item;}
             private MenuItem ConvertMenu(Forms.ToolStripMenuItem source)
             {
                 var item=new MenuItem{Header=source.Text,IsEnabled=source.Enabled,Foreground=UiTheme.Ink};
@@ -137,7 +153,7 @@ namespace CadBatch.UI
 
             private void BuildSearch()
             {
-                var pane=new WGrid{Margin=new Thickness(0,0,20,0)};pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition());pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(pane);
+                var pane=new WGrid{Margin=new Thickness(0,0,20,0)};pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition());pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});WGrid.SetRowSpan(pane,2);body.Children.Add(pane);
                 pane.Children.Add(UiTheme.StepHeader(1,"Найдите рамки","Где и что искать в чертеже",out step1));
                 var stack=new StackPanel();findPane.Child=stack;var scroll=new ScrollViewer{Content=findPane,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Margin=new Thickness(0,0,-10,0),Padding=new Thickness(0,0,10,0)};WGrid.SetRow(scroll,1);pane.Children.Add(scroll);
                 stack.Children.Add(UiTheme.Caption("Где искать"));
@@ -157,7 +173,7 @@ namespace CadBatch.UI
             }
             private void BuildTable()
             {
-                var pane=new WGrid{Margin=new Thickness(0,0,20,0)};WGrid.SetColumn(pane,1);body.Children.Add(pane);pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition());pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+                var pane=new WGrid{Margin=new Thickness(0,0,20,0)};tablePane=pane;WGrid.SetColumn(pane,1);WGrid.SetRow(pane,1);body.Children.Add(pane);pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});pane.RowDefinitions.Add(new RowDefinition());pane.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
                 var head=new StackPanel{Margin=new Thickness(0,0,0,16)};var row=new StackPanel{Orientation=Orientation.Horizontal};step2=UiTheme.Step(2);row.Children.Add(step2);
                 var caption=UiTheme.Title("Проверьте листы",22);caption.Margin=new Thickness(11,0,0,0);caption.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(caption);head.Children.Add(row);
                 summary.Foreground=UiTheme.Secondary;summary.FontSize=13.5;summary.Margin=new Thickness(39,3,0,0);summary.TextTrimming=TextTrimming.CharacterEllipsis;head.Children.Add(summary);pane.Children.Add(head);
@@ -165,16 +181,18 @@ namespace CadBatch.UI
                 var tools=new WrapPanel{Margin=new Thickness(0,0,0,4)};
                 var moreButton=UiTheme.Button("Ещё",UiTheme.IconMore,"Outline");moreButton.ToolTip="Сохранить список, столбцы, настройки печати";moreButton.Click+=(s,e)=>TableOptions(moreButton);
                 var locate=UiTheme.Button("Показать в AutoCAD",UiTheme.IconLocate,"Outline");locate.Margin=new Thickness(8,0,0,0);locate.ToolTip="Приблизить выбранную рамку в окне AutoCAD";locate.Click+=async(s,e)=>await LocateInCadAsync();
-                var none=UiTheme.Button("Снять все",null,"Outline");none.Margin=new Thickness(8,0,0,0);none.ToolTip="Ни один лист не будет выведен";none.Click+=(s,e)=>Guard(()=>c.SetAll(false));
-                var all=UiTheme.Button("Отметить все",UiTheme.IconCheck,"Outline");all.Margin=new Thickness(8,0,0,0);all.ToolTip="Все листы будут выведены в PDF";all.Click+=(s,e)=>Guard(()=>c.SetAll(true));
+                var none=UiTheme.Button("Снять все",null,"Outline");none.Margin=new Thickness(8,0,0,0);none.ToolTip="Ни один лист не будет выведен";none.Click+=(s,e)=>Guard(()=>MarkAll(false));
+                var all=UiTheme.Button("Отметить все",UiTheme.IconCheck,"Outline");all.Margin=new Thickness(8,0,0,0);all.ToolTip="Все листы будут выведены в PDF";all.Click+=(s,e)=>Guard(()=>MarkAll(true));
                 var searchBox=new WGrid{Width=230,Margin=new Thickness(0,0,0,8)};search.Padding=new Thickness(36,0,11,0);searchBox.Children.Add(search);var lens=UiTheme.Icon(UiTheme.IconSearch,15,UiTheme.Tertiary);lens.Margin=new Thickness(13,0,0,0);lens.HorizontalAlignment=HorizontalAlignment.Left;lens.IsHitTestVisible=false;searchBox.Children.Add(lens);
                 search.TextChanged+=(s,e)=>ApplyFilter(search.Text);tools.Children.Add(searchBox);
                 foreach(var b in new[]{all,none,locate,moreButton}){b.Margin=new Thickness(8,0,0,8);tools.Children.Add(b);}
                 WGrid.SetRow(tools,1);pane.Children.Add(tools);refresh.Add(()=>{bool on=c.running==null&&c.frames.Count>0;tools.IsEnabled=c.running==null;all.IsEnabled=none.IsEnabled=locate.IsEnabled=on;});
 
                 table.AutoGenerateColumns=false;table.CanUserAddRows=false;table.CanUserDeleteRows=false;table.CanUserSortColumns=false;table.CanUserReorderColumns=true;table.CanUserResizeRows=false;table.HeadersVisibility=DataGridHeadersVisibility.Column;table.SelectionMode=DataGridSelectionMode.Extended;table.SelectionUnit=DataGridSelectionUnit.FullRow;
-                table.RowHeight=50;table.BorderThickness=new Thickness(0);table.Foreground=UiTheme.Ink;table.Background=Brushes.White;table.RowBackground=Brushes.White;table.AlternatingRowBackground=Brushes.White;table.GridLinesVisibility=DataGridGridLinesVisibility.Horizontal;table.HorizontalGridLinesBrush=new SolidColorBrush(Color.FromRgb(236,236,240));
+                table.RowHeight=50;table.BorderThickness=new Thickness(0);table.Foreground=UiTheme.Ink;table.Background=UiTheme.Surface;table.RowBackground=UiTheme.Surface;table.AlternatingRowBackground=UiTheme.Surface;table.GridLinesVisibility=DataGridGridLinesVisibility.Horizontal;table.HorizontalGridLinesBrush=new SolidColorBrush(Color.FromRgb(236,236,240));
                 table.EnableRowVirtualization=true;table.EnableColumnVirtualization=true;VirtualizingPanel.SetVirtualizationMode(table,VirtualizationMode.Recycling);
+                // ModernWpf sets its own RowStyle/CellStyle on DataGrid, so the window styles must be assigned explicitly.
+                if(Resources[typeof(DataGridRow)] is Style rowStyle)table.RowStyle=rowStyle;if(Resources[typeof(DataGridCell)] is Style cellStyle)table.CellStyle=cellStyle;
                 CheckColumn();
                 Col("№","Page",52,simple:true);Col("Наименование","Title",260,false,simple:true);table.Columns[table.Columns.Count-1].Width=new DataGridLength(1,DataGridLengthUnitType.Star);table.Columns[table.Columns.Count-1].MinWidth=150;Col("Лист","SheetNumber",76,false,simple:true);FormatColumn();Col("Размер, мм","SizeText",124,simple:true);Col("Масштаб","Scale",92);Col("Угол","AngleDegrees",70);Col("Вкладка","Layout",104,converter:new LayoutNames());
                 Col("Чертёж","File",190,true,false);Col("Слой","Layer",110,true,false);Col("Шифр","Code",140,false,false);Col("Ревизия","Revision",95,false,false);Col("Источник","Kind",150,true,false);Col("Состояние","Status",230,true,false);Col("Копии","Copies",75,false,false);Col("Устройство","Device",170,false,false);Col("CTB / STB","StyleSheet",160,false,false);Col("Масштаб из","ScaleSource",170,true,false);
@@ -183,9 +201,14 @@ namespace CadBatch.UI
                 c.frames.ListChanged+=(s,e)=>{if(e.ListChangedType==System.ComponentModel.ListChangedType.ItemChanged)return;if(view is System.ComponentModel.IEditableCollectionView editing&&!editing.IsEditingItem&&!editing.IsAddingNew)view.Refresh();};
                 table.SelectionChanged+=(s,e)=>{c.fluentSelection=table.SelectedItem as DetectedFrame;foreach(Forms.DataGridViewRow r in c.grid.Rows)r.Selected=table.SelectedItems.Contains(r.DataBoundItem);RenderSelection();};
                 table.MouseDoubleClick+=async(s,e)=>{if(table.CurrentColumn?.IsReadOnly==true&&table.SelectedItem!=null&&IsRow(e.OriginalSource))await LocateInCadAsync();};table.CellEditEnding+=(s,e)=>Dispatcher.BeginInvoke(new Action(()=>c.UpdateCount()));
-                table.PreviewKeyDown+=(s,e)=>{if(e.Key==Key.Space&&!IsEditing()&&table.SelectedItems.Count>0){var rows=table.SelectedItems.OfType<DetectedFrame>().ToList();bool value=rows.Any(f=>!f.Enabled);foreach(var f in rows)f.Enabled=value;c.UpdateCount();e.Handled=true;}};
-                var holder=new WGrid();var border=UiTheme.Card(table,1,false);border.Margin=new Thickness(0);border.ClipToBounds=true;holder.Children.Add(border);holder.Children.Add(BuildEmptyState());WGrid.SetRow(holder,2);pane.Children.Add(holder);
-                var hint=UiTheme.Hint("Галочка — лист попадёт в PDF. Щёлкните по строке, чтобы справа изменить название или номер листа.",new Thickness(2,10,0,0));WGrid.SetRow(hint,3);pane.Children.Add(hint);
+                table.PreviewKeyDown+=(s,e)=>{if(e.Key==Key.Space&&!IsEditing()&&table.SelectedItems.Count>0){var rows=table.SelectedItems.OfType<DetectedFrame>().ToList();bool value=rows.Any(f=>!f.Enabled);if(rows.Count>1)RememberMarks(rows,(value?"Отмечено":"Снято отметок")+": "+rows.Count);foreach(var f in rows)f.Enabled=value;c.UpdateCount();e.Handled=true;}};
+                var holder=new WGrid();var border=UiTheme.Card(table,1,false);border.Margin=new Thickness(0);border.ClipToBounds=true;holder.Children.Add(border);holder.Children.Add(BuildEmptyState());WGrid.SetRow(holder,3);pane.Children.Add(holder);
+                var bannerRow=new DockPanel();var bannerIcon=UiTheme.Icon(UiTheme.IconWarning,17,UiTheme.Warning);bannerIcon.Margin=new Thickness(0,0,10,0);DockPanel.SetDock(bannerIcon,WDock.Left);bannerRow.Children.Add(bannerIcon);
+                var showProblem=UiTheme.Button("Показать",null,"Outline");showProblem.Margin=new Thickness(12,0,0,0);showProblem.Click+=(s,e)=>ShowNumberProblem();DockPanel.SetDock(showProblem,WDock.Right);bannerRow.Children.Add(showProblem);
+                numberText.TextWrapping=TextWrapping.Wrap;numberText.VerticalAlignment=VerticalAlignment.Center;numberText.Foreground=UiTheme.Ink;numberText.FontSize=14.5;bannerRow.Children.Add(numberText);
+                numberBanner.Child=bannerRow;numberBanner.Background=UiTheme.WarningSoft;numberBanner.BorderBrush=UiTheme.Warning;numberBanner.BorderThickness=new Thickness(1);numberBanner.CornerRadius=new CornerRadius(12);numberBanner.Padding=new Thickness(14,8,8,8);numberBanner.Margin=new Thickness(0,0,0,12);
+                WGrid.SetRow(numberBanner,2);pane.Children.Add(numberBanner);
+                var hint=UiTheme.Hint("Галочка — лист попадёт в PDF. Щёлкните по строке, чтобы справа изменить название или номер листа.",new Thickness(2,10,0,0));WGrid.SetRow(hint,4);pane.Children.Add(hint);tableHint=hint;
             }
             private void CheckColumn()
             {
@@ -203,14 +226,14 @@ namespace CadBatch.UI
                 var title=UiTheme.Title("Листов пока нет",24);title.HorizontalAlignment=HorizontalAlignment.Center;stack.Children.Add(title);
                 var text=UiTheme.Text(demo?"Это демо-режим. Нажмите «Найти рамки», чтобы посмотреть, как выглядят найденные листы.":"Откройте чертёж в AutoCAD и нажмите «Найти рамки». Найденные листы появятся здесь.",16,null,UiTheme.Secondary);
                 text.TextAlignment=TextAlignment.Center;text.Margin=new Thickness(0,10,0,22);text.LineHeight=23;stack.Children.Add(text);
-                var find=UiTheme.Button("Найти рамки",UiTheme.IconSearch,"Primary");find.HorizontalAlignment=HorizontalAlignment.Center;find.Height=50;find.FontSize=16;find.MinWidth=220;find.Click+=async(s,e)=>await FindAsync();stack.Children.Add(find);
-                emptyState.Child=stack;emptyState.Background=Brushes.White;emptyState.CornerRadius=new CornerRadius(14);emptyState.BorderBrush=UiTheme.Line;emptyState.BorderThickness=new Thickness(1);
+                var find=UiTheme.Button("Найти рамки",UiTheme.IconSearch,"Primary");find.HorizontalAlignment=HorizontalAlignment.Center;find.Height=50;find.FontSize=16;find.MinWidth=220;find.Click+=async(s,e)=>await FindAsync();stack.Children.Add(find);stack.Children.Add(recent);
+                emptyState.Child=stack;emptyState.Background=UiTheme.Surface;emptyState.CornerRadius=new CornerRadius(14);emptyState.BorderBrush=UiTheme.Line;emptyState.BorderThickness=new Thickness(1);
                 refresh.Add(()=>{var v=c.frames.Count==0?Visibility.Visible:Visibility.Collapsed;if(emptyState.Visibility!=v)emptyState.Visibility=v;find.IsEnabled=c.running==null;});
                 return emptyState;
             }
             private void BuildDetails()
             {
-                var right=new StackPanel();var scroll=new ScrollViewer{Content=right,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Margin=new Thickness(0,0,-10,0),Padding=new Thickness(0,0,10,0)};WGrid.SetColumn(scroll,2);body.Children.Add(scroll);
+                var right=new StackPanel();var scroll=new ScrollViewer{Content=right,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Margin=new Thickness(0,0,-10,0),Padding=new Thickness(0,0,10,0)};rightScroll=scroll;WGrid.SetRow(scroll,1);WGrid.SetColumn(scroll,2);body.Children.Add(scroll);
                 right.Children.Add(UiTheme.StepHeader(3,"Сохраните PDF","Куда и как сохранить листы",out step3));
                 var settings=new StackPanel();
                 var modes=new ComboBox{ItemsSource=c.pdfModes.Select(m=>m.Text).ToArray()};modes.SelectionChanged+=(s,e)=>{if(modes.SelectedIndex>=0&&modes.SelectedIndex!=(int)c.profile.PdfMode&&c.running==null){c.ChangePdfMode((PdfOutputMode)modes.SelectedIndex);Sync();}};
@@ -238,13 +261,15 @@ namespace CadBatch.UI
             }
             private UIElement BuildFooter()
             {
-                var footer=new Border{Background=Brushes.White,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(0,1,0,0),Padding=new Thickness(24,12,24,12)};
+                var footer=new Border{Background=UiTheme.Surface,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(0,1,0,0),Padding=new Thickness(24,12,24,12)};
                 var grid=new WGrid();footer.Child=grid;grid.ColumnDefinitions.Add(new ColumnDefinition());grid.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
                 var left=new StackPanel{VerticalAlignment=VerticalAlignment.Center};var line=new DockPanel();statusIcon.Margin=new Thickness(0,0,10,0);statusIcon.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(statusIcon);
                 stop.Margin=new Thickness(12,0,0,0);stop.Click+=(s,e)=>c.running?.Cancel();DockPanel.SetDock(stop,WDock.Right);openResult.Margin=new Thickness(8,0,0,0);openResult.Click+=(s,e)=>OpenFolder(c.LastOutputFolder??c.folder.Text);DockPanel.SetDock(openResult,WDock.Right);
-                line.Children.Add(stop);line.Children.Add(openResult);
+                undo.Margin=new Thickness(12,0,0,0);undo.Visibility=Visibility.Collapsed;undo.Click+=(s,e)=>RestoreMarks();DockPanel.SetDock(undo,WDock.Right);
+                line.Children.Add(stop);line.Children.Add(openResult);line.Children.Add(undo);
                 state.TextTrimming=TextTrimming.CharacterEllipsis;state.Foreground=UiTheme.Ink;state.FontSize=15;state.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(state);left.Children.Add(line);
-                activity.Margin=new Thickness(0,10,0,0);activity.Height=8;activity.MaxWidth=620;activity.HorizontalAlignment=HorizontalAlignment.Stretch;left.Children.Add(activity);grid.Children.Add(left);
+                activity.Margin=new Thickness(0,10,0,0);activity.Height=8;activity.MaxWidth=620;activity.HorizontalAlignment=HorizontalAlignment.Stretch;left.Children.Add(activity);
+                progressText.FontSize=14;progressText.Foreground=UiTheme.Secondary;progressText.Margin=new Thickness(0,6,0,0);progressText.Visibility=Visibility.Collapsed;left.Children.Add(progressText);grid.Children.Add(left);
                 var right=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(24,0,0,0)};
                 readiness.Foreground=UiTheme.Secondary;readiness.FontSize=14;readiness.VerticalAlignment=VerticalAlignment.Center;readiness.Margin=new Thickness(0,0,16,0);readiness.TextAlignment=TextAlignment.Right;readiness.MaxWidth=360;readiness.TextWrapping=TextWrapping.Wrap;right.Children.Add(readiness);
                 output.SetResourceReference(StyleProperty,"Primary");output.MinWidth=250;output.Height=52;output.FontSize=16;output.Click+=async(s,e)=>await OutputAsync();right.Children.Add(output);
@@ -280,7 +305,10 @@ namespace CadBatch.UI
             {
                 double scale=Math.Max(1,prefs.TextScale),available=bodyScroll.ActualWidth>0?bodyScroll.ActualWidth:ActualWidth/scale;
                 body.Width=Math.Max(BodyMinWidth,available-body.Margin.Left-body.Margin.Right);double width=body.Width;
-                body.ColumnDefinitions[0].Width=new GridLength(width<1180?240:width<1320?262:290);body.ColumnDefinitions[2].Width=new GridLength(width<1180?296:width<1320?318:350);
+                // Small screens or very large text: steps 2 and 3 share the middle as two tabs instead of squeezing three columns.
+                compact=width<CompactWidth;
+                body.ColumnDefinitions[0].Width=new GridLength(compact?250:width<1320?262:290);body.ColumnDefinitions[2].Width=new GridLength(compact?0:width<1320?318:350);
+                WGrid.SetColumn(rightScroll,compact?1:2);rightScroll.Margin=compact?new Thickness(0,0,10,0):new Thickness(0,0,-10,0);ShowTab(tab);
             }
             private void SetMode(bool advanced){if(prefs.Advanced==advanced)return;prefs.Advanced=advanced;prefs.Save(prefsPath);ApplyMode();}
             private void ApplyMode()
@@ -322,6 +350,10 @@ namespace CadBatch.UI
             private void TableOptions(FrameworkElement anchor)
             {
                 var menu=new ContextMenu{PlacementTarget=anchor,Placement=PlacementMode.Bottom,FontSize=14.5};
+                menu.Items.Add(Command("Сохранить комплект для повторного вывода…",()=>Guard(()=>c.SaveJob())));
+                menu.Items.Add(Command("Открыть сохранённый комплект…",async()=>await OpenJobAsync(null)));
+                foreach(var path in RecentJobs().Take(5))menu.Items.Add(Command("    "+Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(path)),async()=>await OpenJobAsync(path)));
+                menu.Items.Add(new System.Windows.Controls.Separator());
                 menu.Items.Add(Command("Сохранить список листов в CSV…",()=>Guard(()=>c.SaveCsv())));
                 if(prefs.Advanced){menu.Items.Add(Command("Столбцы таблицы…",()=>Guard(ChooseColumns)));menu.Items.Add(new System.Windows.Controls.Separator());menu.Items.Add(Command("Настройки печати по форматам…",()=>Guard(()=>{c.EditProfile();table.Items.Refresh();})));}
                 if(Math.Abs(prefs.TextScale-1)>0.001)menu.LayoutTransform=new ScaleTransform(prefs.TextScale,prefs.TextScale);
@@ -359,7 +391,8 @@ namespace CadBatch.UI
             }
             private static bool IsInside(DependencyObject d,DependencyObject parent){while(d!=null){if(d==parent)return true;d=d is Visual?VisualTreeHelper.GetParent(d):LogicalTreeHelper.GetParent(d);}return false;}
             private static StackPanel Field(string caption,UIElement child)=>Field(caption,child,out _);
-            private static StackPanel Field(string caption,UIElement child,out TextBlock label){var field=new StackPanel{Margin=new Thickness(0,0,0,16)};label=UiTheme.Hint(caption,new Thickness(2,0,0,7));label.FontSize=14;label.FontWeight=FontWeights.SemiBold;field.Children.Add(label);field.Children.Add(child);return field;}
+            private static StackPanel Field(string caption,UIElement child,out TextBlock label){var field=new StackPanel{Margin=new Thickness(0,0,0,16)};label=UiTheme.Hint(caption,new Thickness(2,0,0,7));label.FontSize=14;label.FontWeight=FontWeights.SemiBold;field.Children.Add(label);field.Children.Add(child);
+                var target=child is Panel panel?panel.Children.OfType<Control>().LastOrDefault(x=>!(x is WButton))??(UIElement)child:child;System.Windows.Automation.AutomationProperties.SetLabeledBy(target,label);System.Windows.Automation.AutomationProperties.SetName(target,caption);return field;}
             private void InsertToken(string key)
             {
                 if(nameInput==null)return;string value="{"+key+"}";int at=nameInput.IsKeyboardFocusWithin||nameInput.CaretIndex>0?nameInput.CaretIndex:nameInput.Text.Length;string text=nameInput.Text;
@@ -393,6 +426,11 @@ namespace CadBatch.UI
                 }
                 if(c.frames.Count==0){if(ModernDialog.Actions(Handle,"Сначала найдите рамки","Листы для PDF ещё не найдены. Нажмите «Найти рамки» — CAD Batch найдёт все листы в открытом чертеже.",DialogKind.Info,"Найти рамки","Не сейчас")==0)await FindAsync();return;}
                 if(marked==0){if(ModernDialog.Actions(Handle,"Не отмечено ни одного листа","Поставьте галочки у листов, которые нужно сохранить в PDF, или отметьте все сразу.",DialogKind.Info,"Отметить все листы","Не сейчас")==0){c.SetAll(true);Sync();}return;}
+                if(numberProblems.Count>0)
+                {
+                    int answer=ModernDialog.Actions(Handle,"Проверьте номера листов",numberText.Text+"\n\nЛисты можно сохранить и так, но в комплекте могут быть путаница или пропуски.",DialogKind.Warning,"Сохранить всё равно","Показать листы","Отмена");
+                    if(answer==1){ShowNumberProblem();return;}if(answer!=0)return;
+                }
                 if(c.scaleNeedsSearch){if(ModernDialog.Actions(Handle,"Нужно найти рамки заново","Параметры поиска изменились, поэтому размеры листов могли измениться.",DialogKind.Info,"Найти рамки заново","Не сейчас")==0)await FindAsync();return;}
                 // Choosing the folder is part of the first export, not a separate hurdle.
                 if(string.IsNullOrWhiteSpace(c.folder.Text)){c.ChooseFolder();if(string.IsNullOrWhiteSpace(c.folder.Text))return;}
@@ -432,10 +470,10 @@ namespace CadBatch.UI
                 {
                     UiTheme.Apply(this,false);WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=Brushes.Transparent;Topmost=true;ShowInTaskbar=false;ShowActivated=false;ResizeMode=ResizeMode.NoResize;SizeToContent=SizeToContent.WidthAndHeight;Title="CAD Batch";
                     var row=new StackPanel{Orientation=Orientation.Horizontal};
-                    var icon=new Border{Width=32,Height=32,CornerRadius=new CornerRadius(9),Background=UiTheme.Accent,VerticalAlignment=VerticalAlignment.Center,Child=UiTheme.Icon(UiTheme.IconDocument,15,Brushes.White)};((TextBlock)icon.Child).HorizontalAlignment=HorizontalAlignment.Center;row.Children.Add(icon);
+                    var icon=new Border{Width=32,Height=32,CornerRadius=new CornerRadius(9),Background=UiTheme.Accent,VerticalAlignment=VerticalAlignment.Center,Child=UiTheme.Icon(UiTheme.IconDocument,15,UiTheme.OnAccent)};((TextBlock)icon.Child).HorizontalAlignment=HorizontalAlignment.Center;row.Children.Add(icon);
                     var text=UiTheme.Text(message,15,FontWeights.SemiBold);text.VerticalAlignment=VerticalAlignment.Center;text.Margin=new Thickness(12,0,16,0);text.MaxWidth=460;row.Children.Add(text);
                     if(back!=null){var button=UiTheme.Button("Вернуться в CAD Batch",null,"Primary");button.Click+=(s,e)=>back();row.Children.Add(button);}
-                    var surface=new Border{Child=row,Background=Brushes.White,CornerRadius=new CornerRadius(14),BorderBrush=new SolidColorBrush(Color.FromArgb(40,0,0,0)),BorderThickness=new Thickness(1),Padding=new Thickness(14,10,10,10),Margin=new Thickness(14),
+                    var surface=new Border{Child=row,Background=UiTheme.Surface,CornerRadius=new CornerRadius(14),BorderBrush=new SolidColorBrush(Color.FromArgb(40,0,0,0)),BorderThickness=new Thickness(1),Padding=new Thickness(14,10,10,10),Margin=new Thickness(14),
                         Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=24,ShadowDepth=4,Direction=270,Opacity=0.22}};
                     if(scale>1.001)surface.LayoutTransform=new ScaleTransform(scale,scale);
                     Content=surface;
@@ -449,6 +487,92 @@ namespace CadBatch.UI
             private void Attention()
             {
                 try{var info=new FlashInfo{Size=(uint)Marshal.SizeOf(typeof(FlashInfo)),Window=Handle,Flags=3|12,Count=5,Timeout=0};FlashWindowEx(ref info);System.Media.SystemSounds.Asterisk.Play();}catch(Exception){}
+            }
+            private void BuildTabs()
+            {
+                foreach(var b in new[]{sheetsTab,saveTab}){b.MinWidth=170;b.Margin=new Thickness(0,0,8,0);tabs.Children.Add(b);}
+                sheetsTab.Click+=(s,e)=>ShowTab(0);saveTab.Click+=(s,e)=>ShowTab(1);tabs.Visibility=Visibility.Collapsed;WGrid.SetColumn(tabs,1);WGrid.SetRow(tabs,0);body.Children.Add(tabs);
+            }
+            private void ShowTab(int index)
+            {
+                tab=index;tabs.Visibility=compact?Visibility.Visible:Visibility.Collapsed;if(tableHint!=null)tableHint.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
+                tablePane.Visibility=!compact||tab==0?Visibility.Visible:Visibility.Collapsed;rightScroll.Visibility=!compact||tab==1?Visibility.Visible:Visibility.Collapsed;
+                sheetsTab.SetResourceReference(StyleProperty,tab==0?"Primary":"Outline");saveTab.SetResourceReference(StyleProperty,tab==1?"Primary":"Outline");
+            }
+            private void MarkAll(bool value)
+            {
+                int changed=c.frames.Count(f=>f.Enabled!=value);if(changed==0)return;
+                RememberMarks(c.frames.ToList(),(value?"Отмечено листов: ":"Снято отметок: ")+changed);c.SetAll(value);
+            }
+            private void RememberMarks(List<DetectedFrame> rows,string text){undoMarks=rows.ToDictionary(f=>f,f=>f.Enabled);undoUntil=DateTime.Now.AddSeconds(30);undoText=text;c.status.Text=text+". Можно вернуть как было.";}
+            private void RestoreMarks()
+            {
+                var marks=undoMarks;undoMarks=null;if(marks==null)return;foreach(var pair in marks)if(c.frames.Contains(pair.Key))pair.Key.Enabled=pair.Value;
+                c.UpdateCount();c.status.Text="Отметки возвращены как было.";Sync();
+            }
+            private string ProgressText()
+            {
+                int done=(int)c.progress.Value,total=(int)c.progress.Maximum;if(total<2)return "";
+                string text="Лист "+Math.Min(done+1,total)+" из "+total;
+                if(done>0){double left=(DateTime.Now-busySince).TotalSeconds/done*(total-done);text+=" · "+(left<50?"осталось меньше минуты":"осталось около "+Math.Max(1,(int)Math.Round(left/60))+" мин");}
+                return text;
+            }
+            private void UpdateNumberCheck()
+            {
+                var marked=c.frames.Where(f=>f.Enabled).ToList();var empty=marked.Where(f=>string.IsNullOrWhiteSpace(f.SheetNumber)).ToList();
+                var repeats=marked.Where(f=>!string.IsNullOrWhiteSpace(f.SheetNumber)).GroupBy(f=>f.Source.DocumentKey+"|"+f.SheetNumber.Trim(),StringComparer.OrdinalIgnoreCase).Where(g=>g.Count()>1).ToList();
+                numberProblems=empty.Concat(repeats.SelectMany(g=>g)).ToList();
+                var parts=new List<string>();if(empty.Count>0)parts.Add(empty.Count+" "+Plural(empty.Count,"лист","листа","листов")+" без номера");
+                foreach(var g in repeats.Take(3))parts.Add("номер «"+g.First().SheetNumber.Trim()+"» повторяется "+g.Count()+" "+Plural(g.Count(),"раз","раза","раз"));if(repeats.Count>3)parts.Add("и ещё повторы");
+                string message=parts.Count==0?"":"Проверьте номера: "+string.Join(", ",parts)+".";
+                if(numberText.Text!=message)numberText.Text=message;var v=parts.Count>0?Visibility.Visible:Visibility.Collapsed;if(numberBanner.Visibility!=v)numberBanner.Visibility=v;
+            }
+            private void ShowNumberProblem()
+            {
+                if(numberProblems.Count==0)return;if(compact)ShowTab(0);if(search.Text.Length>0)search.Text="";
+                var frame=numberProblems[numberCursor++%numberProblems.Count];table.SelectedItem=frame;table.ScrollIntoView(frame);
+            }
+            // Recent jobs: the same set of sheets is often printed again next month.
+            private List<string> RecentJobs()=>(prefs.RecentJobs??new List<string>()).Where(File.Exists).ToList();
+            private void RememberJob(string path)
+            {
+                var list=prefs.RecentJobs??new List<string>();list.RemoveAll(x=>string.Equals(x,path,StringComparison.OrdinalIgnoreCase));list.Insert(0,path);prefs.RecentJobs=list.Take(8).ToList();prefs.Save(prefsPath);RenderRecent();
+            }
+            private void RenderRecent()
+            {
+                recent.Children.Clear();var jobs=RecentJobs().Take(4).ToList();if(jobs.Count==0)return;
+                var caption=UiTheme.Caption("Недавние комплекты");caption.HorizontalAlignment=HorizontalAlignment.Center;recent.Children.Add(caption);
+                foreach(var path in jobs)
+                {
+                    var b=UiTheme.Button(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(path)),UiTheme.IconDocument,"Outline");b.HorizontalAlignment=HorizontalAlignment.Stretch;b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,0,0,8);b.ToolTip=path;
+                    var target=path;b.Click+=async(s,e)=>await OpenJobAsync(target);recent.Children.Add(b);
+                }
+            }
+            private async Task OpenJobAsync(string? path){if(c.running!=null)return;await Execute(()=>c.LoadJobAsync(path));if(c.frames.Count>0&&table.SelectedItem==null)table.SelectedIndex=0;}
+            private void ShowIntro()
+            {
+                if(!IsLoaded||isClosed)return;new IntroWindow(Handle,prefs.TextScale).ShowDialog();
+                if(!prefs.SeenIntro){prefs.SeenIntro=true;prefs.Save(prefsPath);}
+            }
+            // Errors in plain words: what happened, what to do, and a button that does it.
+            private bool ExplainError(Exception ex)
+            {
+                string title,text;string? action=null;Action? run=null;
+                if(ex is IOException&&!(ex is FileNotFoundException)&&!(ex is PathTooLongException)&&(ex is EndOfStreamException||ex.Message.IndexOf("связи",StringComparison.OrdinalIgnoreCase)>=0||ex.Message.IndexOf("pipe",StringComparison.OrdinalIgnoreCase)>=0||ex.Message.IndexOf("канал",StringComparison.OrdinalIgnoreCase)>=0))
+                {title="Нет связи с AutoCAD";text="Похоже, AutoCAD закрыт или занят другой командой.\n\nЧто сделать: откройте AutoCAD, нажмите там Esc, чтобы завершить команду, и подключитесь снова.";if(reconnect!=null){action="Подключиться снова";run=reconnect;}}
+                else if(ex is UnauthorizedAccessException)
+                {title="Нет доступа к папке";text="В эту папку нельзя записывать файлы.\n\nЧто сделать: выберите другую папку, например «Документы».";action="Выбрать другую папку";run=()=>c.ChooseFolder();}
+                else if(ex is PathTooLongException||ex.Message.IndexOf("слишком длинный",StringComparison.OrdinalIgnoreCase)>=0)
+                {title="Слишком длинный путь";text="Имя файла вместе с папкой получилось слишком длинным для Windows.\n\nЧто сделать: выберите папку поближе к корню диска (например D:\\PDF) или сократите шаблон имени.";action="Выбрать другую папку";run=()=>c.ChooseFolder();}
+                else if(ex is FileNotFoundException)
+                {title="Файл не найден";text=ex.Message+"\n\nЧто сделать: проверьте, что файл не переместили и диск подключён.";}
+                else if(ex is ArgumentException)
+                {title="Проверьте данные";text=ex.Message+"\n\nЧто сделать: исправьте значение и повторите.";}
+                else
+                {title="Не получилось";text=ex.Message+"\n\nЧто сделать: попробуйте ещё раз. Если ошибка повторяется, сохраните отчёт: «Справка → Диагностика».";action="Открыть диагностику";run=()=>c.ShowDiagnostics();}
+                if(action==null)ModernDialog.Message(Handle,title,text,DialogKind.Warning);
+                else if(ModernDialog.Actions(Handle,title,text,DialogKind.Warning,action,"Закрыть")==0)Dispatcher.BeginInvoke(run!);
+                return true;
             }
             private async Task Execute(Func<Task> action){CommitGrid();await c.RunAsync(action);Sync();}
             private void OnKey(object sender,KeyEventArgs e)
@@ -476,16 +600,19 @@ namespace CadBatch.UI
                 foreach(var action in refresh)action();bool busy=c.running!=null;findPane.IsEnabled=pdfPane.IsEnabled=table.IsEnabled=selected.IsEnabled=!busy;
                 int total=c.frames.Count,marked=c.frames.Count(f=>f.Enabled);bool one=c.profile.PdfMode==PdfOutputMode.OneFile;
                 output.IsEnabled=!busy;
-                output.Content=UiTheme.Content(one?"Сохранить один PDF":marked==0?"Сохранить PDF":"Сохранить "+marked+" "+Plural(marked,"лист","листа","листов"),UiTheme.IconDownload);
+                string outputText=one?"Сохранить один PDF":marked==0?"Сохранить PDF":"Сохранить "+marked+" "+Plural(marked,"лист","листа","листов");output.Content=UiTheme.Content(outputText,UiTheme.IconDownload);System.Windows.Automation.AutomationProperties.SetName(output,outputText);
                 bool ready=c.host.CanPlot&&marked>0&&!c.scaleNeedsSearch;
                 readiness.Text=busy?"Идёт работа…":!c.host.CanPlot?(demo?"В демо-режиме PDF не создаются":"Нет связи с AutoCAD"):total==0?"Сначала найдите рамки (шаг 1)":marked==0?"Отметьте листы галочками (шаг 2)":c.scaleNeedsSearch?"Параметры изменились — найдите рамки заново":string.IsNullOrWhiteSpace(c.folder.Text)?"Папку предложим выбрать":"Всё готово";
                 readiness.Foreground=ready||busy?UiTheme.Secondary:UiTheme.Warning;
+                if(busy&&!wasBusy)busySince=DateTime.Now;wasBusy=busy;progressText.Text=busy?ProgressText():"";progressText.Visibility=progressText.Text.Length>0?Visibility.Visible:Visibility.Collapsed;
+                if(undoMarks!=null&&(DateTime.Now>undoUntil||busy))undoMarks=null;undo.Visibility=undoMarks!=null?Visibility.Visible:Visibility.Collapsed;
+                if(!busy)UpdateNumberCheck();
                 stop.Visibility=busy?Visibility.Visible:Visibility.Collapsed;activity.Visibility=busy&&c.progress.Maximum>0?Visibility.Visible:Visibility.Collapsed;
                 openResult.Visibility=!busy&&c.LastOutputFolder!=null&&c.status.Text.StartsWith("Готово",StringComparison.Ordinal)?Visibility.Visible:Visibility.Collapsed;
                 c.RefreshWorkspaceCount();summary.Text=total==0?"Здесь появятся найденные листы":c.frameSummary.Text;if(state.Text!=c.status.Text){state.Text=c.status.Text;RenderStatusIcon(busy);}
                 activity.Maximum=c.progress.Maximum;activity.Value=c.progress.Value;
-                step2.Background=total>0?UiTheme.Accent:UiTheme.Fill;((TextBlock)step2.Child).Foreground=total>0?Brushes.White:UiTheme.Secondary;
-                step3.Background=marked>0?UiTheme.Accent:UiTheme.Fill;((TextBlock)step3.Child).Foreground=marked>0?Brushes.White:UiTheme.Secondary;
+                step2.Background=total>0?UiTheme.Accent:UiTheme.Fill;((TextBlock)step2.Child).Foreground=total>0?UiTheme.OnAccent:UiTheme.Secondary;
+                step3.Background=marked>0?UiTheme.Accent:UiTheme.Fill;((TextBlock)step3.Child).Foreground=marked>0?UiTheme.OnAccent:UiTheme.Secondary;
                 if(knownFrames!=total){knownFrames=total;if(table.SelectedItem==null&&total>0)table.SelectedIndex=0;RenderSelection();}
             }
             private void RenderStatusIcon(bool busy)
@@ -539,7 +666,7 @@ namespace CadBatch.UI
                 // A proportional sheet with the 185 × 55 mm title block, not a picture of the DWG content.
                 double w=Math.Max(1,f.PaperWidthMm),h=Math.Max(1,f.PaperHeightMm),factor=Math.Min(230/w,108/h),pw=w*factor,ph=h*factor;
                 var sheet=new WGrid{Width=pw,Height=ph,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
-                sheet.Children.Add(new System.Windows.Shapes.Rectangle{Fill=Brushes.White,Stroke=new SolidColorBrush(Color.FromRgb(174,174,178)),StrokeThickness=1,RadiusX=1.5,RadiusY=1.5,Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=8,ShadowDepth=1,Direction=270,Opacity=0.12}});
+                sheet.Children.Add(new System.Windows.Shapes.Rectangle{Fill=UiTheme.Surface,Stroke=new SolidColorBrush(Color.FromRgb(174,174,178)),StrokeThickness=1,RadiusX=1.5,RadiusY=1.5,Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=8,ShadowDepth=1,Direction=270,Opacity=0.12}});
                 double sw=Math.Min(185*factor,pw-4),sh=Math.Min(55*factor,ph-4);
                 if(sw>6&&sh>3)sheet.Children.Add(new System.Windows.Shapes.Rectangle{Width=sw,Height=sh,Stroke=UiTheme.Accent,StrokeThickness=1,Fill=UiTheme.AccentSoft,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(2)});
                 sheet.Children.Add(new TextBlock{Text=f.FormatName,FontSize=13,FontWeight=FontWeights.SemiBold,Foreground=UiTheme.Secondary,Margin=new Thickness(6,4,0,0),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top});
@@ -551,11 +678,35 @@ namespace CadBatch.UI
                 if(c.frames.Count!=12||c.ToolMenuCount!=6||table.Columns.Count<16)throw new InvalidOperationException("WPF smoke: missing frames, menus or columns.");
                 // Editing a sheet in the card must reach the shared row.
                 var first=(DetectedFrame)table.SelectedItem;string title=first.Title;first.Title="Проверка";if(c.frames[c.frames.IndexOf(first)].Title!="Проверка")throw new InvalidOperationException("WPF smoke: sheet edit lost.");first.Title=title;
+                // Selected rows once lost their text (white on light blue): the cell text must stay dark.
+                table.Focus();UpdateLayout();if(SelectedRowForeground().StartsWith("#FFFFFFFF",StringComparison.Ordinal))throw new InvalidOperationException("WPF smoke: selected row text is white.");
                 RenderTo(path);
                 File.WriteAllText(path+".txt","WPF + ModernWpf smoke PASS: 12 frames, six menus, editable grid, PDF modes/names, selected frame, scoped theme. CAD output disabled in demo.");
             }
             // Smoke support: switch mode and text size without touching the user's saved preferences file.
-            public void PreviewLook(bool advanced,double scale){prefs.Advanced=advanced;prefs.TextScale=scale;ApplyMode();ApplyScale();UpdateLayout();}
+            public void PreviewLook(bool advanced,double scale){prefs.Advanced=advanced;prefs.TextScale=scale;ApplyMode();ApplyScale();UpdateLayout();Relayout();UpdateLayout();}
+            public void PreviewTab(int index){ShowTab(index);UpdateLayout();}
+            public void PreviewSelection(){Activate();table.SelectedIndex=1;table.Focus();table.CurrentCell=new DataGridCellInfo(table.Items[1],table.Columns[2]);var row=(DataGridRow)table.ItemContainerGenerator.ContainerFromIndex(1);row?.Focus();UpdateLayout();}
+            public string SelectedRowForeground(){var row=(DataGridRow?)table.ItemContainerGenerator.ContainerFromIndex(table.SelectedIndex);var cell=row==null?null:FindChild<DataGridCell>(row);return cell==null?"":((cell.Foreground as SolidColorBrush)?.Color.ToString()??"")+" selected="+cell.IsSelected+" active="+Selector.GetIsSelectionActive(table)+" rowBg="+((row!.Background as SolidColorBrush)?.Color.ToString()??"?")+" src="+DependencyPropertyHelper.GetValueSource(row,BackgroundProperty).BaseValueSource+" rowSel="+row.IsSelected;}
+            private static T? FindChild<T>(DependencyObject node) where T:DependencyObject{for(int i=0;i<VisualTreeHelper.GetChildrenCount(node);i++){var child=VisualTreeHelper.GetChild(node,i);if(child is T found)return found;var deeper=FindChild<T>(child);if(deeper!=null)return deeper;}return null;}
+            // What a screen reader (Narrator) would announce without a name: every visible interactive control must have one.
+            public List<string> AccessibilityReport()
+            {
+                var missing=new List<string>();int total=0;
+                void Walk(DependencyObject node)
+                {
+                    if(node is UIElement element&&!element.IsVisible)return;
+                    if(node is ButtonBase||node is WText||node is ComboBox||node is WCheck)
+                    {
+                        total++;var peer=System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement((UIElement)node);string name=peer?.GetName()??"";
+                        bool insideTemplate=node is FrameworkElement fe&&fe.TemplatedParent!=null&&!(fe.TemplatedParent is ContentPresenter);
+                        if(string.IsNullOrWhiteSpace(name)&&!insideTemplate)missing.Add(node.GetType().Name+" ← "+(VisualTreeHelper.GetParent(node)?.GetType().Name??"")+" ← "+((node as FrameworkElement)?.TemplatedParent?.GetType().Name??"-")+" «"+((node as ContentControl)?.Content as string??(node as WText)?.Text??"")+"»");
+                    }
+                    for(int i=0;i<VisualTreeHelper.GetChildrenCount(node);i++)Walk(VisualTreeHelper.GetChild(node,i));
+                }
+                Walk(this);missing.Insert(0,"Проверено элементов: "+total+"; без названия: "+missing.Count);return missing;
+            }
+            public void PreviewProblems(){if(c.frames.Count>2){c.frames[1].SheetNumber="";c.frames[2].SheetNumber=c.frames[0].SheetNumber;}MarkAll(false);RestoreMarks();RememberMarks(c.frames.ToList(),"Снято отметок: 12");Sync();UpdateLayout();}
             public void RenderCard(string path)=>UiTheme.Snapshot((FrameworkElement)selected.Parent,path);
             public void RenderTo(string path)
             {

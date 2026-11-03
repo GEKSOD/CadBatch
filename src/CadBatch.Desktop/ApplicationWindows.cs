@@ -24,7 +24,7 @@ namespace CadBatch.Desktop
         public static IntPtr Handle(Window window)=>new WindowInteropHelper(window).Handle;
         public static Border AppIcon(double size)
         {
-            var icon=UiTheme.Icon(UiTheme.IconDocument,size*0.46,Brushes.White);icon.HorizontalAlignment=HorizontalAlignment.Center;
+            var icon=UiTheme.Icon(UiTheme.IconDocument,size*0.46,UiTheme.OnAccent);icon.HorizontalAlignment=HorizontalAlignment.Center;
             return new Border{Width=size,Height=size,CornerRadius=new CornerRadius(size*0.26),Background=new LinearGradientBrush(Color.FromRgb(10,132,255),Color.FromRgb(0,92,196),90),Child=icon,
                 Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=18,ShadowDepth=4,Direction=270,Opacity=0.18,Color=Color.FromRgb(0,80,180)}};
         }
@@ -42,7 +42,7 @@ namespace CadBatch.Desktop
         {
             var window=new BatchWindow.FluentWindow(host,settings);
             window.AddApplicationMenu(
-                ()=>{if(!window.CanCloseForUpdate){ModernDialog.Message(Handle(window),"Подождите","Дождитесь завершения текущей операции.");return;}var start=new ConnectionWindow();Application.Current.MainWindow=start;start.Show();window.Close();},
+                ()=>{if(!window.CanCloseForUpdate){ModernDialog.Message(Handle(window),"Подождите","Дождитесь завершения текущей операции.");return;}var start=new ConnectionWindow(false);Application.Current.MainWindow=start;start.Show();window.Close();},
                 ()=>OpenUpdates(window,!window.CanCloseForUpdate));
             Application.Current.MainWindow=window;window.Show();
         }
@@ -60,9 +60,14 @@ namespace CadBatch.Desktop
         private bool busy;
         private readonly string preferences=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","preferences.json");
         private static readonly string Bundle=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"Autodesk","ApplicationPlugins","CadBatch.bundle");
-        private sealed class Preferences{public bool CheckUpdates {get;set;}=true;}
-        public ConnectionWindow()
+        private sealed class Preferences{public bool CheckUpdates {get;set;}=true;public bool AutoConnect {get;set;}=true;public bool ConnectedBefore {get;set;}}
+        private Preferences settings=new Preferences();
+        private readonly CheckBox autoConnect=new CheckBox{Content="Подключаться автоматически, если AutoCAD один",FontSize=14,Margin=new Thickness(0,12,0,0)};
+        // Automatic connection only on a normal start, never when the person came back here to choose another AutoCAD.
+        private readonly bool allowAuto;private bool autoTried;
+        public ConnectionWindow(bool allowAuto=true)
         {
+            this.allowAuto=allowAuto;
             Title="CAD Batch";Width=640;Height=800;MinWidth=540;MinHeight=600;WindowStartupLocation=WindowStartupLocation.CenterScreen;UiTheme.Apply(this);
             var stack=new StackPanel{Margin=new Thickness(36,36,36,24),MaxWidth=520};Content=new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Background=UiTheme.Canvas};
             var icon=DesktopUi.AppIcon(68);icon.HorizontalAlignment=HorizontalAlignment.Center;icon.Margin=new Thickness(0,0,0,16);stack.Children.Add(icon);
@@ -71,7 +76,7 @@ namespace CadBatch.Desktop
 
             var card=new StackPanel();card.Children.Add(UiTheme.Title("Подключение к AutoCAD",21));card.Children.Add(UiTheme.Hint("Три шага — и можно работать. Окно само заметит, когда AutoCAD будет готов.",new Thickness(0,4,0,14)));
             card.Children.Add(checklist);card.Children.Add(sessionArea);
-            connect.Height=52;connect.FontSize=16;connect.Margin=new Thickness(0,6,0,0);connect.Click+=async(s,e)=>await ConnectAsync();card.Children.Add(connect);
+            connect.Height=52;connect.FontSize=16;connect.Margin=new Thickness(0,6,0,0);connect.Click+=async(s,e)=>await ConnectAsync();card.Children.Add(connect);card.Children.Add(autoConnect);
             stack.Children.Add(UiTheme.Card(card,22));
 
             var links=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,2,0,18)};
@@ -82,8 +87,9 @@ namespace CadBatch.Desktop
             var updates=new DockPanel();var check=UiTheme.Button("Проверить",UiTheme.IconRefresh,"Outline");check.VerticalAlignment=VerticalAlignment.Center;check.Click+=(s,e)=>DesktopUi.OpenUpdates(this);DockPanel.SetDock(check,Dock.Right);updates.Children.Add(check);
             var info=new StackPanel{VerticalAlignment=VerticalAlignment.Center};info.Children.Add(UiTheme.Text("Версия "+ProductInfo.Version,15,FontWeights.SemiBold));updateState.Text="Обновления приходят из GitHub Releases.";updateState.Margin=new Thickness(0,2,0,6);info.Children.Add(updateState);info.Children.Add(autoUpdates);updates.Children.Add(info);
             stack.Children.Add(UiTheme.Card(updates,18));
-            try{autoUpdates.IsChecked=!File.Exists(preferences)||(System.Text.Json.JsonSerializer.Deserialize<Preferences>(File.ReadAllText(preferences))?.CheckUpdates??true);}catch{autoUpdates.IsChecked=true;}
-            autoUpdates.Click+=(s,e)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(preferences)!);File.WriteAllText(preferences,System.Text.Json.JsonSerializer.Serialize(new Preferences{CheckUpdates=autoUpdates.IsChecked==true}));}catch(IOException){}catch(UnauthorizedAccessException){}};
+            try{if(File.Exists(preferences))settings=System.Text.Json.JsonSerializer.Deserialize<Preferences>(File.ReadAllText(preferences))??new Preferences();}catch{settings=new Preferences();}
+            autoUpdates.IsChecked=settings.CheckUpdates;autoConnect.IsChecked=settings.AutoConnect;
+            autoUpdates.Click+=(s,e)=>{settings.CheckUpdates=autoUpdates.IsChecked==true;SavePreferences();};autoConnect.Click+=(s,e)=>{settings.AutoConnect=autoConnect.IsChecked==true;SavePreferences();};
             DesktopUi.Scale(this);
             sessions.SelectionChanged+=(s,e)=>UpdateConnect();
             poll.Tick+=(s,e)=>Refresh();
@@ -108,7 +114,9 @@ namespace CadBatch.Desktop
             if(found.Count>1){sessionArea.Children.Add(UiTheme.Hint("Выберите AutoCAD",new Thickness(2,4,0,6)));sessions.ItemsSource=found;sessions.SelectedItem=found.FirstOrDefault(f=>f.Pipe==keep)??found[0];sessionArea.Children.Add(sessions);}
             else{sessions.ItemsSource=found;sessions.SelectedIndex=found.Count>0?0:-1;if(found.Count==1){var one=UiTheme.Hint(found[0].Description,new Thickness(2,4,0,10));one.TextTrimming=TextTrimming.CharacterEllipsis;one.TextWrapping=TextWrapping.NoWrap;one.ToolTip=found[0].Description;sessionArea.Children.Add(one);}}
             UpdateConnect();
+            if(allowAuto&&!autoTried&&settings.AutoConnect&&settings.ConnectedBefore&&found.Count==1){autoTried=true;Dispatcher.BeginInvoke(new Action(async()=>await ConnectAsync()));}
         }
+        private void SavePreferences(){try{Directory.CreateDirectory(Path.GetDirectoryName(preferences)!);File.WriteAllText(preferences,System.Text.Json.JsonSerializer.Serialize(settings));}catch(IOException){}catch(UnauthorizedAccessException){}}
         private void UpdateConnect()
         {
             connect.IsEnabled=!busy&&sessions.SelectedItem is BridgeEndpoint;
@@ -119,7 +127,7 @@ namespace CadBatch.Desktop
         {
             var row=new DockPanel{Margin=new Thickness(0,0,0,last?14:12)};
             var mark=new Border{Width=30,Height=30,CornerRadius=new CornerRadius(15),Background=done?UiTheme.Success:UiTheme.Fill,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,1,12,0),
-                Child=done?(UIElement)UiTheme.Icon(UiTheme.IconCheck,14,Brushes.White):new TextBlock{Text=number.ToString(),FontSize=14,FontWeight=FontWeights.SemiBold,Foreground=UiTheme.Secondary,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
+                Child=done?(UIElement)UiTheme.Icon(UiTheme.IconCheck,14,UiTheme.OnAccent):new TextBlock{Text=number.ToString(),FontSize=14,FontWeight=FontWeights.SemiBold,Foreground=UiTheme.Secondary,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
             if(done)((TextBlock)mark.Child).HorizontalAlignment=HorizontalAlignment.Center;
             DockPanel.SetDock(mark,Dock.Left);row.Children.Add(mark);
             if(action!=null){var b=UiTheme.Button(action.Value.Label,null,"Outline");b.VerticalAlignment=VerticalAlignment.Center;b.Margin=new Thickness(12,0,0,0);var run=action.Value.Action;b.Click+=(s,e)=>run();DockPanel.SetDock(b,Dock.Right);row.Children.Add(b);}
@@ -131,7 +139,7 @@ namespace CadBatch.Desktop
             if(busy||sessions.SelectedItem is not BridgeEndpoint endpoint)return;busy=true;UpdateConnect();
             try
             {
-                var host=new RemoteHost(endpoint);await host.ConnectAsync();DesktopUi.ShowMain(this,host);busy=false;Close();
+                var host=new RemoteHost(endpoint);await host.ConnectAsync();if(!settings.ConnectedBefore){settings.ConnectedBefore=true;SavePreferences();}DesktopUi.ShowMain(this,host);busy=false;Close();
             }
             catch(Exception ex){ModernDialog.Message(DesktopUi.Handle(this),"Не удалось подключиться",ex.Message+"\n\nПроверьте, что AutoCAD не занят командой, и попробуйте ещё раз.",DialogKind.Warning);lastSignature="";}
             finally{busy=false;UpdateConnect();}
@@ -197,7 +205,7 @@ namespace CadBatch.Desktop
             var titles=new StackPanel{VerticalAlignment=VerticalAlignment.Center};titles.Children.Add(UiTheme.Title("Обновления",22));titles.Children.Add(UiTheme.Hint("Установлена версия "+ProductInfo.Version+". Настройки и задания сохраняются.",new Thickness(0,2,0,0)));head.Children.Add(titles);
             DockPanel.SetDock(head,Dock.Top);root.Children.Add(head);
             var top=new StackPanel();top.Children.Add(status);top.Children.Add(progress);DockPanel.SetDock(top,Dock.Top);root.Children.Add(top);
-            details.FontSize=12.5;var notes=new Border{Child=new ScrollViewer{Content=details,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(14,12,14,12)},Background=Brushes.White,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(12),Margin=new Thickness(0,12,0,0)};root.Children.Add(notes);
+            details.FontSize=12.5;var notes=new Border{Child=new ScrollViewer{Content=details,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(14,12,14,12)},Background=UiTheme.Surface,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(12),Margin=new Thickness(0,12,0,0)};root.Children.Add(notes);
             DesktopUi.Scale(this);
             download.Click+=async(s,e)=>await DownloadAsync();install.Click+=async(s,e)=>await InstallAsync();
             Loaded+=async(s,e)=>await CheckAsync();Closing+=(s,e)=>{if(installing){e.Cancel=true;return;}cancellation.Cancel();};
@@ -215,7 +223,7 @@ namespace CadBatch.Desktop
         {
             if(release==null||downloading)return;downloading=true;download.IsEnabled=false;progress.Visibility=Visibility.Visible;
             try{using var http=UpdateClient.CreateHttpClient();status.Text="Загрузка версии "+release.Version+"…";file=await new UpdateClient(http).DownloadAsync(release,Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","Updates",release.Version),new Progress<double>(v=>progress.Value=v),cancellation.Token);
-                status.Text="Загружено и проверено (SHA-256)";status.Foreground=UiTheme.Success;download.Visibility=Visibility.Collapsed;install.Visibility=Visibility.Visible;install.IsEnabled=!operationBusy;
+                status.Text="✓  Загружено и проверено";status.Foreground=UiTheme.Success;download.Visibility=Visibility.Collapsed;install.Visibility=Visibility.Visible;install.IsEnabled=!operationBusy;details.Text="Файл скачан полностью и не повреждён. Закройте AutoCAD и нажмите «Установить и перезапустить».\n\n"+details.Text;
                 if(operationBusy)details.Text="Установка станет доступна после завершения текущего задания CAD Batch.\n\n"+details.Text;}
             catch(Exception ex){if(!cancellation.IsCancellationRequested){status.Text=ex.Message;download.IsEnabled=true;}}finally{downloading=false;}
         }
@@ -227,7 +235,7 @@ namespace CadBatch.Desktop
                 if(operationBusy)throw new InvalidOperationException("Дождитесь завершения задания CAD Batch.");
                 var list=Process.GetProcessesByName("acad");bool cad=list.Length>0;foreach(var p in list)p.Dispose();
                 if(cad)throw new InvalidOperationException("Сначала сохраните чертежи и полностью закройте AutoCAD, затем нажмите «Установить».");
-                installing=true;install.IsEnabled=false;status.Text="Проверка установщика…";
+                installing=true;install.IsEnabled=false;status.Text="Подготовка к установке…";
                 if(!await UpdateClient.VerifyAsync(file,release,CancellationToken.None))throw new InvalidDataException("Установщик изменён после загрузки. Скачайте его заново.");
                 Process.Start(new ProcessStartInfo(file,"--update --wait-pid "+Environment.ProcessId+" --launch"){UseShellExecute=true});Application.Current.Shutdown();
             }
