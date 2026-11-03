@@ -190,13 +190,13 @@ namespace CadBatch.UI
             message+="\n\nНастройки по форматам:\n"+string.Join("\n",printPlan.Select(e=>e.Frame.FormatName+": "+e.Settings.Device+"; "+(e.Settings.Media.Length==0?"бумага по рамке":e.Settings.Media)+"; "+PrintStylePolicy.Describe(e.Settings.ColorMode)).Distinct().Take(10));
             var overrides=items.Where(i=>!string.IsNullOrWhiteSpace(i.Frame.Device)||!string.IsNullOrWhiteSpace(i.Frame.StyleSheet)).ToList();
             if(overrides.Count>0)message+="\n\nСобственные настройки строк: "+overrides.Count+"\n"+string.Join("\n",overrides.Take(10).Select(i=>i.Frame.Page+": "+i.Frame.Device+" / "+i.Frame.StyleSheet));
-            message+="\n\nКопии для PDF не учитываются. Существующие файлы не перезаписываются: новым файлам добавляется номер.";
+            message+=(profile.RepeatCopiesInPdf==true?"\n\nЛисты с копиями повторяются в PDF нужное число раз.":"\n\nКопии для PDF не учитываются (включается в «Плоттер и шаблоны»).")+" Существующие файлы не перезаписываются: новым файлам добавляется номер.";
             var facts=new[]{("PDF-файлов",groups.Count.ToString()),("Страниц",items.Count.ToString()),("Папка",profile.OutputFolder),("Плоттер",profile.Device),("Цвет",color.Text)};
             if(!ModernDialog.Plan(DialogHandle,selectedOnly?"PDF выбранного листа":"Вывод PDF","Проверьте план. Вывод можно отменить в любой момент, готовые файлы сохранятся.",facts,message,groups.Count==1?"Создать PDF":"Создать "+groups.Count+" PDF"))return;
             var request=new ExportRequest { Items=items,Device=profile.Device,StyleSheet=profile.StyleSheet,FitToPaper=fit.Checked,ColorMode=profile.ColorMode,PdfMode=mode,Groups=groups };
             var checkpoint=CheckpointStore.Create(profile,frames.ToList(),groups,mode);
             string checkpointPath=Path.Combine(profile.OutputFolder,".CadBatch-jobs","Вывод-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".cadbatchjob.json");CheckpointStore.Save(checkpointPath,checkpoint);
-            request.OutputCompleted=path=>{CheckpointStore.Complete(checkpoint,path);CheckpointStore.Save(checkpointPath,checkpoint);};
+            request.OutputCompleted=path=>{RepeatCopies(path,groups);CheckpointStore.Complete(checkpoint,path);CheckpointStore.Save(checkpointPath,checkpoint);};
             var report=await host.ExportAsync(request,new Progress<BatchProgress>(p=>
             { progress.Maximum=Math.Max(1,p.Total);progress.Value=Math.Min(p.Done,progress.Maximum);status.Text=p.Text;frames.ResetBindings(); }),running!.Token);
             diagnostics.Add("Журнал для возобновления: "+checkpointPath);
@@ -209,6 +209,14 @@ namespace CadBatch.UI
             if(report.Errors.Count>0)
                 Notify("Создано PDF: "+report.Files.Count+".\n\n"+report.Errors[0]+"\n\nПодробный отчёт:\n"+reportPath,"Вывод завершён с ошибками");
         }
+        // Runs before the checkpoint hash, so a resumed job sees the final file.
+        private void RepeatCopies(string path,List<PdfGroup> groups)
+        {
+            if(profile.RepeatCopiesInPdf!=true)return;var group=groups.FirstOrDefault(g=>string.Equals(Path.GetFullPath(g.Path),Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase));
+            if(group==null||group.Items.All(i=>i.Frame.Copies<=1))return;
+            try{CadBatch.Pdf.TargetSheetPdf.RepeatPages(path,group.Items.Select(i=>Math.Max(1,i.Frame.Copies)).ToList(),group.Items.Count>1?group.Items.Select(i=>i.Frame.Title).ToList():null);}
+            catch(Exception ex){diagnostics.Add("Копии не добавлены в "+Path.GetFileName(path)+": "+ex.Message);}
+        }
         private void ChooseFolder()
         {
             using(var dialog=new FolderBrowserDialog { Description="Папка для PDF",SelectedPath=folder.Text })
@@ -219,9 +227,9 @@ namespace CadBatch.UI
             if(running!=null)return;
             try
             {
-                ReadProfile();using(var dialog=new ProfileDialog(profile,host))
-                    if(dialog.ShowDialog(DialogOwner)==DialogResult.OK) { profile=dialog.Profile;ApplyProfile();
-                        foreach(var f in frames){var format=profile.Formats.FirstOrDefault(p=>p.Name==f.FormatName&&p.WidthMm==f.Format.WidthMm&&p.HeightMm==f.Format.HeightMm);if(format!=null)f.Format=format;else MarkScaleDirty();} }
+                ReadProfile();var dialog=new PrintSettingsWindow(profile,host,DialogHandle);
+                if(dialog.ShowDialog()==true) { profile=dialog.Profile;ApplyProfile();
+                    foreach(var f in frames){var format=profile.Formats.FirstOrDefault(p=>p.Name==f.FormatName&&p.WidthMm==f.Format.WidthMm&&p.HeightMm==f.Format.HeightMm);if(format!=null)f.Format=format;else MarkScaleDirty();} }
             }
             catch(Exception ex) { Notify(ex.Message,"Шаблоны"); }
         }

@@ -254,7 +254,9 @@ namespace CadBatch.UI
                 var fitRow=ToggleRow("Вписать в лист бумаги",c.fit,"Выключите, чтобы печатать точно 1:1");((FrameworkElement)fitRow).Margin=new Thickness(0,0,0,12);settings.Children.Add(fitRow);
                 var plotter=new StackPanel();plotter.Children.Add(Field("Плоттер PDF (PC3)",Input(c.device)));
                 var templates=UiTheme.Button("Настройки по форматам…",UiTheme.IconSettings,"Outline");templates.HorizontalAlignment=HorizontalAlignment.Stretch;templates.Click+=(s,e)=>Guard(()=>{c.EditProfile();table.Items.Refresh();});plotter.Children.Add(templates);
-                plotter.Children.Add(UiTheme.Hint("Своё устройство, бумага, стиль и поворот для каждого формата.",new Thickness(0,8,0,0)));
+                plotter.Children.Add(UiTheme.Hint("Своё устройство, бумага, стиль и поворот для каждого формата.",new Thickness(0,8,0,12)));
+                var copies=new WCheck{Content=UiTheme.Text("Повторять листы в PDF по числу копий",14.5)};copies.Click+=(s,e)=>c.profile.RepeatCopiesInPdf=copies.IsChecked==true;refresh.Add(()=>{bool on=c.profile.RepeatCopiesInPdf==true;if(copies.IsChecked!=on)copies.IsChecked=on;});
+                plotter.Children.Add(copies);plotter.Children.Add(UiTheme.Hint("Число копий задаётся в столбце «Копии».",new Thickness(34,2,0,0)));
                 var expander=new Expander{Header="Плоттер и шаблоны",Content=plotter,Margin=new Thickness(0,2,0,0)};settings.Children.Add(expander);advancedOnly.Add(expander);
                 pdfPane.Child=settings;right.Children.Add(UiTheme.Card(pdfPane));
                 right.Children.Add(UiTheme.Card(selected));RenderSelection();
@@ -354,6 +356,8 @@ namespace CadBatch.UI
                 menu.Items.Add(Command("Открыть сохранённый комплект…",async()=>await OpenJobAsync(null)));
                 foreach(var path in RecentJobs().Take(5))menu.Items.Add(Command("    "+Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(path)),async()=>await OpenJobAsync(path)));
                 menu.Items.Add(new System.Windows.Controls.Separator());
+                menu.Items.Add(Command("Сохранить ведомость в Excel…",()=>Guard(()=>c.SaveRegisterXlsx())));
+                menu.Items.Add(Command("Загрузить названия и номера из ведомости…",()=>Guard(()=>c.ImportRegister())));
                 menu.Items.Add(Command("Сохранить список листов в CSV…",()=>Guard(()=>c.SaveCsv())));
                 if(prefs.Advanced){menu.Items.Add(Command("Столбцы таблицы…",()=>Guard(ChooseColumns)));menu.Items.Add(new System.Windows.Controls.Separator());menu.Items.Add(Command("Настройки печати по форматам…",()=>Guard(()=>{c.EditProfile();table.Items.Refresh();})));}
                 if(Math.Abs(prefs.TextScale-1)>0.001)menu.LayoutTransform=new ScaleTransform(prefs.TextScale,prefs.TextScale);
@@ -686,6 +690,11 @@ namespace CadBatch.UI
             // Smoke support: switch mode and text size without touching the user's saved preferences file.
             public void PreviewLook(bool advanced,double scale){prefs.Advanced=advanced;prefs.TextScale=scale;ApplyMode();ApplyScale();UpdateLayout();Relayout();UpdateLayout();}
             public void PreviewTab(int index){ShowTab(index);UpdateLayout();}
+            public void RenderEditors(string folder)
+            {
+                var print=new PrintSettingsWindow(c.profile,c.host,Handle);print.Show();print.UpdateLayout();Dispatcher.Invoke(()=>{},DispatcherPriority.ApplicationIdle);UiTheme.Snapshot((FrameworkElement)print.Content,Path.Combine(folder,"print-settings.png"));print.Close();
+                var stamp=new StampZonesWindow(c.profile.Metadata,Handle);stamp.Show();Dispatcher.Invoke(()=>{},DispatcherPriority.ApplicationIdle);stamp.RenderPreview(Path.Combine(folder,"stamp-zones.png"));stamp.Close();
+            }
             public void PreviewSelection(){Activate();table.SelectedIndex=1;table.Focus();table.CurrentCell=new DataGridCellInfo(table.Items[1],table.Columns[2]);var row=(DataGridRow)table.ItemContainerGenerator.ContainerFromIndex(1);row?.Focus();UpdateLayout();}
             public string SelectedRowForeground(){var row=(DataGridRow?)table.ItemContainerGenerator.ContainerFromIndex(table.SelectedIndex);var cell=row==null?null:FindChild<DataGridCell>(row);return cell==null?"":((cell.Foreground as SolidColorBrush)?.Color.ToString()??"")+" selected="+cell.IsSelected+" active="+Selector.GetIsSelectionActive(table)+" rowBg="+((row!.Background as SolidColorBrush)?.Color.ToString()??"?")+" src="+DependencyPropertyHelper.GetValueSource(row,BackgroundProperty).BaseValueSource+" rowSel="+row.IsSelected;}
             private static T? FindChild<T>(DependencyObject node) where T:DependencyObject{for(int i=0;i<VisualTreeHelper.GetChildrenCount(node);i++){var child=VisualTreeHelper.GetChild(node,i);if(child is T found)return found;var deeper=FindChild<T>(child);if(deeper!=null)return deeper;}return null;}

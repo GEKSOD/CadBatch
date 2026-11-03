@@ -157,6 +157,7 @@ namespace CadBatch.Core
         [DataMember] public PdfOutputMode PdfMode { get; set; }
         [DataMember] public string CombinedPdfName { get; set; } = "Комплект";
         [DataMember(EmitDefaultValue=false)] public bool? FitToPaper {get;set;}
+        [DataMember(EmitDefaultValue=false)] public bool? RepeatCopiesInPdf {get;set;}
         [DataMember(EmitDefaultValue=false)] public WindowSettings? Window {get;set;}
         [DataMember(EmitDefaultValue=false)] public StampMetadataSettings? Metadata {get;set;}=new StampMetadataSettings();
         public void UpgradeCatalog()

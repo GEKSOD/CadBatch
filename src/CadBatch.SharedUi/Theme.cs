@@ -156,15 +156,26 @@ namespace CadBatch.UI
         <ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border x:Name='box' Background='White' BorderBrush='#D2D2D7' BorderThickness='1' CornerRadius='8'/>
           <ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='box' Property='BorderBrush' Value='#B9B9BF'/></Trigger><Trigger Property='IsChecked' Value='True'><Setter TargetName='box' Property='BorderBrush' Value='#0071E3'/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
       </ToggleButton>
-      <ContentPresenter Content='{TemplateBinding SelectionBoxItem}' ContentTemplate='{TemplateBinding SelectionBoxItemTemplate}' Margin='11,6,32,6' VerticalAlignment='Center' HorizontalAlignment='Left' IsHitTestVisible='False'/>
+      <ContentPresenter x:Name='shown' Content='{TemplateBinding SelectionBoxItem}' ContentTemplate='{TemplateBinding SelectionBoxItemTemplate}' Margin='11,6,32,6' VerticalAlignment='Center' HorizontalAlignment='Left' IsHitTestVisible='False'/>
+      <TextBox x:Name='PART_EditableTextBox' Style='{x:Null}' Visibility='Collapsed' Margin='1,1,30,1' Padding='8,0,0,0' Background='Transparent' BorderThickness='0' VerticalContentAlignment='Center' Foreground='{TemplateBinding Foreground}' CaretBrush='#0071E3' IsReadOnly='{Binding IsReadOnly, RelativeSource={RelativeSource TemplatedParent}}'/>
       <TextBlock Text='&#xE70D;' FontFamily='Segoe Fluent Icons, Segoe MDL2 Assets' FontSize='10' HorizontalAlignment='Right' VerticalAlignment='Center' Margin='0,1,12,0' Foreground='#6E6E73' IsHitTestVisible='False'/>
       <Popup x:Name='PART_Popup' IsOpen='{TemplateBinding IsDropDownOpen}' Placement='Bottom' VerticalOffset='4' AllowsTransparency='True' Focusable='False' PopupAnimation='Fade'>
         <Border Margin='8,0,8,12' Background='White' BorderBrush='#E5E5EA' BorderThickness='1' CornerRadius='10' Padding='0,4' MinWidth='{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}' MaxHeight='340'>
           <Border.Effect><DropShadowEffect BlurRadius='22' ShadowDepth='4' Direction='270' Opacity='0.14'/></Border.Effect>
           <ScrollViewer CanContentScroll='True'><ItemsPresenter KeyboardNavigation.DirectionalNavigation='Contained'/></ScrollViewer></Border></Popup>
     </Grid>
-    <ControlTemplate.Triggers><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers>
+    <ControlTemplate.Triggers><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger>
+      <Trigger Property='IsEditable' Value='True'><Setter TargetName='PART_EditableTextBox' Property='Visibility' Value='Visible'/><Setter TargetName='shown' Property='Visibility' Value='Collapsed'/></Trigger></ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
+</Style>
+<Style TargetType='ListBoxItem'>
+  <Setter Property='Foreground' Value='#1D1D1F'/><Setter Property='Padding' Value='8,2'/><Setter Property='Margin' Value='2,1'/><Setter Property='Cursor' Value='Hand'/><Setter Property='FocusVisualStyle' Value='{x:Null}'/>
+  <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ListBoxItem'>
+    <Border x:Name='bg' CornerRadius='9' Background='Transparent' BorderThickness='2' BorderBrush='Transparent' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='bg' Property='Background' Value='#F2F2F7'/></Trigger>
+      <Trigger Property='IsSelected' Value='True'><Setter TargetName='bg' Property='Background' Value='#E8F2FD'/><Setter TargetName='bg' Property='BorderBrush' Value='#0071E3'/></Trigger>
+    </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
 </Style>
 
 <Style TargetType='CheckBox'>

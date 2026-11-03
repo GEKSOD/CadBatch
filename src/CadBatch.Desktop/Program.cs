@@ -51,6 +51,7 @@ namespace CadBatch.Desktop
                     ModernDialog.Actions(new System.Windows.Interop.WindowInteropHelper(look).Handle,"Готово!","Сохранено PDF-файлов: 12\nПапка: D:\\Проекты\\АР\\PDF",DialogKind.Success,"Открыть папку","Открыть первый PDF","Закрыть");
                     File.WriteAllLines(Path.Combine(args[1],"accessibility.txt"),look.AccessibilityReport());
                     look.PreviewSelection();await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"selected.png"));File.WriteAllText(Path.Combine(args[1],"selected.txt"),look.SelectedRowForeground());
+                    look.RenderEditors(args[1]);
                     look.PreviewProblems();await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"problems.png"));
                     var intro=new IntroWindow(IntPtr.Zero,1);intro.Show();await intro.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);UiTheme.Snapshot((System.Windows.FrameworkElement)intro.Content,Path.Combine(args[1],"intro.png"));intro.Close();
                     look.WindowState=System.Windows.WindowState.Normal;look.Width=1090;look.Height=610;look.PreviewLook(false,1);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.PreviewLook(false,1);look.RenderTo(Path.Combine(args[1],"compact.png"));

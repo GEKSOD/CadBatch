@@ -40,8 +40,8 @@ namespace CadBatch.UI
         private void SaveAdvancedRegister()
         {
             var frames=CheckedFrames();var columns=RegisterOptions.Available.Concat(frames.SelectMany(f=>f.Metadata.Keys)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();var choices=AskChecks("Столбцы ведомости",columns.Select(c=>(c,RegisterOptions.Available.Contains(c))).ToArray());if(choices==null)return;
-            var grouping=AskValues("Группировка ведомости",("Поле группировки (пусто — без группировки)","Шифр"));if(grouping==null)return;
-            string group=grouping[0].Trim();if(group.Length>0&&!columns.Contains(group))throw new ArgumentException("Группировка: укажите имя одного из столбцов.");
+            var grouping=AskValues("Группировка ведомости",("Поля группировки через «;», например «Шифр; Формат» (пусто — без группировки)","Шифр"));if(grouping==null)return;
+            string group=grouping[0].Trim();var unknown=group.Split(';').Select(x=>x.Trim()).Where(x=>x.Length>0&&!columns.Contains(x)).ToList();if(unknown.Count>0)throw new ArgumentException("Группировка: нет столбца «"+unknown[0]+"». Укажите имена столбцов ведомости.");
             var options=new RegisterOptions{Columns=columns.Where((c,i)=>choices[i]).ToArray(),GroupBy=group};options.Rows(frames);
             using(var dialog=new SaveFileDialog{Filter="Книга Excel|*.xlsx|Таблица CSV UTF-8|*.csv",FileName="Ведомость.xlsx"})if(dialog.ShowDialog(DialogOwner)==DialogResult.OK){if(dialog.FilterIndex==2)RegisterExport.Csv(dialog.FileName,frames,options);else RegisterExport.Xlsx(dialog.FileName,frames,options);}
         }
@@ -76,7 +76,7 @@ namespace CadBatch.UI
                 var scan=await host.SearchAsync(profile,running!.Token);var restored=JobStore.Restore(checkpoint.Job,scan.Frames,out var warnings);ReplaceFrames(restored);diagnostics.AddRange(warnings);scaleNeedsSearch=false;
                 var groups=CheckpointStore.Pending(checkpoint,restored);if(groups.Count==0){status.Text="Все PDF из журнала уже созданы и проверены по SHA-256.";return;}
                 if(!ShowText("Возобновление вывода","Готовые PDF проверены по SHA-256 и будут пропущены.\r\nОсталось PDF: "+groups.Count+"; страниц: "+groups.Sum(g=>g.Items.Count)+"\r\n\r\n"+string.Join(Environment.NewLine,groups.Select(g=>g.Path)),"Продолжить вывод"))return;
-                var request=new ExportRequest{Items=groups.SelectMany(g=>g.Items).ToList(),Groups=groups,PdfMode=checkpoint.Mode,Device=profile.Device,StyleSheet=profile.StyleSheet,ColorMode=profile.ColorMode,FitToPaper=profile.FitToPaper??true,OutputCompleted=file=>{CheckpointStore.Complete(checkpoint,file);CheckpointStore.Save(path,checkpoint);}};
+                var request=new ExportRequest{Items=groups.SelectMany(g=>g.Items).ToList(),Groups=groups,PdfMode=checkpoint.Mode,Device=profile.Device,StyleSheet=profile.StyleSheet,ColorMode=profile.ColorMode,FitToPaper=profile.FitToPaper??true,OutputCompleted=file=>{RepeatCopies(file,groups);CheckpointStore.Complete(checkpoint,file);CheckpointStore.Save(path,checkpoint);}};
                 var report=await host.ExportAsync(request,ExportProgress(),running.Token);diagnostics.AddRange(report.Errors);diagnostics.AddRange(report.Details);status.Text=ExportReportText.State(report)+" · создано PDF: "+report.Files.Count;SaveOperationReport(ExportReportText.Format(report,request,host.Description));
             }
         }
@@ -108,19 +108,8 @@ namespace CadBatch.UI
         }
         private void EditMetadata()
         {
-            bool changed=false;var current=profile.Metadata??new StampMetadataSettings();
-            using(var dialog=new Form{Text="Чтение полей штампа",Size=new Size(850,550),StartPosition=FormStartPosition.CenterParent,Font=Font})
-            {
-                var info=new Label{Text="Координаты — мм от левого нижнего угла штампа 185 × 55. Атрибуты блоков имеют приоритет.\r\nПоля: Title, Code, SheetNumber, SheetCount, Revision или своё имя. Зоны можно менять.",Dock=DockStyle.Top,Height=60,Padding=new Padding(12)};
-                var rows=new System.ComponentModel.BindingList<StampFieldZone>(current.Zones.Select(z=>new StampFieldZone(z.Field,z.X,z.Y,z.Width,z.Height)).ToList());
-                var table=new DataGridView{Dock=DockStyle.Fill,AutoGenerateColumns=true,DataSource=rows,BackgroundColor=Color.White,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill};
-                var tools=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=80,Padding=new Padding(8)};var enabled=new CheckBox{Text="Читать текст и таблицы",Checked=current.Enabled,AutoSize=true};
-                var spds=new Button{Text="Зоны СПДС",AutoSize=true};var eskd=new Button{Text="Зоны ЕСКД",AutoSize=true};
-                Action<List<StampFieldZone>> replace=zones=>{rows.Clear();foreach(var z in zones)rows.Add(z);};spds.Click+=(s,e)=>replace(StampMetadataSettings.SpdsZones());eskd.Click+=(s,e)=>replace(StampMetadataSettings.EskdZones());
-                var ok=new Button{Text="Применить",AutoSize=true};ok.Click+=(s,e)=>{try{table.EndEdit();var settings=new StampMetadataSettings{Enabled=enabled.Checked,Form="Пользовательские зоны",Zones=rows.ToList()};settings.Validate();profile.Metadata=settings;changed=true;dialog.DialogResult=DialogResult.OK;}catch(Exception ex){ModernDialog.Message(dialog.Handle,"Проверьте зоны",ex.Message,DialogKind.Warning);}};
-                Add(tools,enabled,spds,eskd,ok);Add(dialog,table,info,tools);WinFormsLook.Primary(ok);WinFormsLook.Apply(dialog);dialog.ShowDialog(DialogOwner);
-            }
-            if(changed)MarkScaleDirty();
+            var dialog=new StampZonesWindow(profile.Metadata,DialogHandle);
+            if(dialog.ShowDialog()==true){profile.Metadata=dialog.Settings;MarkScaleDirty();}
         }
     }
 }

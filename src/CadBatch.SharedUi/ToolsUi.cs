@@ -28,7 +28,7 @@ namespace CadBatch.UI
             var job=new ToolStripMenuItem("Задание");toolsMenu.Items.Add(job);
             Item(job,"Сохранить задание…",SaveJob);Item(job,"Открыть задание…",async()=>await RunAsync(LoadJobAsync));
             Item(job,"Проверить номера листов",()=>ShowText("Проверка номеров",string.Join(Environment.NewLine,Numbering.Warnings(frames).DefaultIfEmpty("Пустых и повторяющихся номеров нет."))));
-            Item(job,"По первой выбранной строке…",CopyFirst);Item(job,"Ведомость в CSV…",SaveRegisterCsv);Item(job,"Ведомость в XLSX…",SaveRegisterXlsx);
+            Item(job,"По первой выбранной строке…",CopyFirst);Item(job,"Загрузить названия и номера из ведомости…",ImportRegister);Item(job,"Ведомость в CSV…",SaveRegisterCsv);Item(job,"Ведомость в XLSX…",SaveRegisterXlsx);
             var order=new ToolStripMenuItem("Порядок");toolsMenu.Items.Add(order);
             string[] labels={"Строками: слева направо","Строками: справа налево","Строками: снизу вверх","Столбцами: сверху вниз","Столбцами: снизу вверх","По номеру листа","По формату","По документу","По шифру"};
             for(int i=0;i<labels.Length;i++){var mode=(FrameSort)i;Item(order,labels[i],()=>ReplaceFrames(FrameOrder.Sort(frames,mode,sortTolerance)));}
@@ -283,6 +283,21 @@ namespace CadBatch.UI
         private string[]? AskValues(string title,params (string Label,string Value)[] fields)=>ModernDialog.Values(DialogHandle,title,null,fields);
         private bool[]? AskChecks(string title,(string Label,bool Value)[] fields)=>ModernDialog.Checks(DialogHandle,title,null,fields);
         private bool ShowText(string title,string text,string? apply=null)=>ModernDialog.Text(DialogHandle,title,text,apply);
+        // The register edited in Excel comes back: titles, numbers, codes and revisions, shown as a plan before applying.
+        private void ImportRegister()
+        {
+            grid.EndEdit();if(frames.Count==0)throw new ArgumentException("Сначала найдите рамки, затем загрузите ведомость.");
+            using(var dialog=new OpenFileDialog{Title="Ведомость с исправлениями",Filter="Ведомость Excel или CSV|*.xlsx;*.csv"})
+            {
+                if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;
+                var changes=RegisterImport.Plan(frames.ToList(),RegisterImport.Read(dialog.FileName),out int skipped);
+                if(changes.Count==0){Notify("Все названия и номера уже совпадают с ведомостью."+(skipped>0?"\nНе найдено строк: "+skipped+".":""),"Изменений нет",DialogKind.Info);return;}
+                string plan=string.Join(Environment.NewLine,changes.Take(300).Select(c=>"Строка "+c.Frame.Page+" · "+c.Field+": «"+c.Old+"» → «"+c.New+"»"))+(changes.Count>300?Environment.NewLine+"… и ещё "+(changes.Count-300):"");
+                if(skipped>0)plan+=Environment.NewLine+Environment.NewLine+"Строк ведомости без пары в таблице: "+skipped+" (пропущены).";
+                if(!ShowText("Изменения из ведомости",plan+Environment.NewLine+Environment.NewLine+"Меняется только таблица CAD Batch. Чтобы записать номера в DWG, используйте «Чертёж → Записать номера в атрибуты».","Применить "+changes.Count))return;
+                RegisterImport.Apply(changes);frames.ResetBindings();status.Text="Готово · из ведомости обновлено значений: "+changes.Count;
+            }
+        }
         private void SaveRegisterCsv()
         {
             var selected=CheckedFrames();using(var dialog=new SaveFileDialog{Filter="CSV UTF-8|*.csv",FileName="Ведомость.csv"})if(dialog.ShowDialog(DialogOwner)==DialogResult.OK)RegisterExport.Csv(dialog.FileName,selected);
