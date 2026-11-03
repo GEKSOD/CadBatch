@@ -114,14 +114,28 @@ namespace CadBatch.UI
             profile.Search.Stamp.Enabled=stampScale.Checked;
             profile.OutputFolder=folder.Text.Trim();SaveVisiblePdfName();profile.Device=device.Text.Trim();profile.StyleSheet=style.Text.Trim();profile.ColorMode=(PrintColorMode)color.SelectedIndex;profile.FitToPaper=fit.Checked;profile.Validate();
         }
-        private static double Number(string value)=>double.Parse(value.Trim().Replace(',','.'),NumberStyles.Float,CultureInfo.InvariantCulture);
+        private static double Number(string value)
+        {
+            if(double.TryParse((value??"").Trim().Replace(',','.').Replace(" ",""),NumberStyles.Float,CultureInfo.InvariantCulture,out double number))return number;
+            throw new ArgumentException("Введите число вместо «"+(value??"").Trim()+"».");
+        }
+        private static int Integer(string value,string caption)
+        {
+            if(int.TryParse((value??"").Trim(),NumberStyles.Integer,CultureInfo.InvariantCulture,out int number))return number;
+            throw new ArgumentException(caption+": введите целое число вместо «"+(value??"").Trim()+"».");
+        }
+        private IntPtr DialogHandle=>DialogOwner.Handle;
+        private void Notify(string text,string title="CAD Batch",DialogKind kind=DialogKind.Warning)=>ModernDialog.Message(DialogHandle,title,text,kind);
+        // Last finished PDF batch: the main window offers to open its folder.
+        public string? LastOutputFolder {get;private set;}
+        public int LastOutputCount {get;private set;}
         private async Task RunAsync(Func<Task> action)
         {
             if(running!=null)return;
             running=new CancellationTokenSource();search.Enabled=false;pdf.Enabled=singlePdf.Enabled=show.Enabled=false;cancel.Enabled=true;toolsMenu.Enabled=false;grid.Enabled=false;findBox.Enabled=outputBox.Enabled=false;workspaceToolbar.Enabled=false;
             try { await action(); }
             catch(OperationCanceledException) { status.Text="Операция отменена."; }
-            catch(Exception ex) { diagnostics.Add(ex.ToString());status.Text=ex.Message;MessageBox.Show(DialogOwner,ex.Message,"CAD Batch",MessageBoxButtons.OK,MessageBoxIcon.Warning); }
+            catch(Exception ex) { diagnostics.Add(ex.ToString());status.Text=ex.Message;Notify(ex.Message,ex is ArgumentException?"Проверьте настройки":"Не получилось"); }
             finally { running.Dispose();running=null;search.Enabled=show.Enabled=true;pdf.Enabled=singlePdf.Enabled=host.CanPlot;cancel.Enabled=false;progress.Value=0;toolsMenu.Enabled=true;grid.Enabled=true;findBox.Enabled=outputBox.Enabled=true;workspaceToolbar.Enabled=true;RefreshSelection();pdf.Enabled=singlePdf.Enabled=host.CanPlot; }
         }
         public Task SearchForSmokeTestAsync()=>RunAsync(ScanAsync);
@@ -167,12 +181,13 @@ namespace CadBatch.UI
             var baseSettings=new ExportRequest{Device=profile.Device,StyleSheet=profile.StyleSheet,FitToPaper=fit.Checked,ColorMode=profile.ColorMode};
             var printPlan=items.Select(i=>new{Frame=i.Frame,Settings=PrintTemplates.Resolve(baseSettings,i.Frame)}).ToList();
             foreach(var entry in printPlan)if(entry.Settings.Device.IndexOf("pdf",StringComparison.OrdinalIgnoreCase)<0||!entry.Settings.Device.EndsWith(".pc3",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Формат "+entry.Frame.FormatName+": для PDF задано устройство «"+entry.Settings.Device+"». Выберите PDF PC3 в шаблоне или настройке строки.");
-            var lines=groups.Take(7).Select(i=>Path.GetFileName(i.Path)+" — страниц: "+i.Items.Count);
-            string message=$"Будет создано PDF: {groups.Count}\nВсего страниц: {items.Count}\nУстройство: {profile.Device}\nПапка: {profile.OutputFolder}\n\n"+string.Join("\n",lines)+(groups.Count>7?"\n…":"")+"\n\nКопии для PDF игнорируются. Существующие файлы сохранятся. Начать вывод?";
-            message+="\n\nНастройки по форматам / строкам:\n"+string.Join("\n",printPlan.Select(e=>e.Frame.FormatName+": "+e.Settings.Device+"; "+(e.Settings.Media.Length==0?"бумага по рамке":e.Settings.Media)+"; "+PrintStylePolicy.Describe(e.Settings.ColorMode)).Distinct().Take(10));
+            string message="Файлы:\n"+string.Join("\n",groups.Take(40).Select(i=>Path.GetFileName(i.Path)+(i.Items.Count>1?" — страниц: "+i.Items.Count:"")))+(groups.Count>40?"\n… и ещё "+(groups.Count-40):"");
+            message+="\n\nНастройки по форматам:\n"+string.Join("\n",printPlan.Select(e=>e.Frame.FormatName+": "+e.Settings.Device+"; "+(e.Settings.Media.Length==0?"бумага по рамке":e.Settings.Media)+"; "+PrintStylePolicy.Describe(e.Settings.ColorMode)).Distinct().Take(10));
             var overrides=items.Where(i=>!string.IsNullOrWhiteSpace(i.Frame.Device)||!string.IsNullOrWhiteSpace(i.Frame.StyleSheet)).ToList();
             if(overrides.Count>0)message+="\n\nСобственные настройки строк: "+overrides.Count+"\n"+string.Join("\n",overrides.Take(10).Select(i=>i.Frame.Page+": "+i.Frame.Device+" / "+i.Frame.StyleSheet));
-            if(MessageBox.Show(DialogOwner,message,"План вывода PDF",MessageBoxButtons.OKCancel,MessageBoxIcon.Information)!=DialogResult.OK)return;
+            message+="\n\nКопии для PDF не учитываются. Существующие файлы не перезаписываются: новым файлам добавляется номер.";
+            var facts=new[]{("PDF-файлов",groups.Count.ToString()),("Страниц",items.Count.ToString()),("Папка",profile.OutputFolder),("Плоттер",profile.Device),("Цвет",color.Text)};
+            if(!ModernDialog.Plan(DialogHandle,selectedOnly?"PDF выбранного листа":"Вывод PDF","Проверьте план. Вывод можно отменить в любой момент, готовые файлы сохранятся.",facts,message,groups.Count==1?"Создать PDF":"Создать "+groups.Count+" PDF"))return;
             var request=new ExportRequest { Items=items,Device=profile.Device,StyleSheet=profile.StyleSheet,FitToPaper=fit.Checked,ColorMode=profile.ColorMode,PdfMode=mode,Groups=groups };
             var checkpoint=CheckpointStore.Create(profile,frames.ToList(),groups,mode);
             string checkpointPath=Path.Combine(profile.OutputFolder,".CadBatch-jobs","Вывод-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".cadbatchjob.json");CheckpointStore.Save(checkpointPath,checkpoint);
@@ -184,9 +199,10 @@ namespace CadBatch.UI
             Directory.CreateDirectory(profile.OutputFolder);
             string reportPath=Path.Combine(profile.OutputFolder,"CadBatch-report-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".txt");
             File.WriteAllText(reportPath,ExportReportText.Format(report,request,host.Description),Encoding.UTF8);
-            status.Text=ExportReportText.State(report)+$" • PDF: {report.Files.Count} • ошибок: {report.Errors.Count}";
+            LastOutputFolder=report.Files.Count>0?profile.OutputFolder:null;LastOutputCount=report.Files.Count;
+            status.Text=report.Cancelled?"Вывод отменён · создано PDF: "+report.Files.Count:report.Errors.Count>0?"Создано PDF: "+report.Files.Count+" · ошибок: "+report.Errors.Count:"Готово · создано PDF: "+report.Files.Count;
             if(report.Errors.Count>0)
-                MessageBox.Show(DialogOwner,"PDF создано: "+report.Files.Count+".\n\n"+report.Errors[0]+"\n\nПодробный отчёт:\n"+reportPath,"Ошибка вывода PDF",MessageBoxButtons.OK,MessageBoxIcon.Warning);
+                Notify("Создано PDF: "+report.Files.Count+".\n\n"+report.Errors[0]+"\n\nПодробный отчёт:\n"+reportPath,"Вывод завершён с ошибками");
         }
         private void ChooseFolder()
         {
@@ -202,7 +218,7 @@ namespace CadBatch.UI
                     if(dialog.ShowDialog(DialogOwner)==DialogResult.OK) { profile=dialog.Profile;ApplyProfile();
                         foreach(var f in frames){var format=profile.Formats.FirstOrDefault(p=>p.Name==f.FormatName&&p.WidthMm==f.Format.WidthMm&&p.HeightMm==f.Format.HeightMm);if(format!=null)f.Format=format;else MarkScaleDirty();} }
             }
-            catch(Exception ex) { MessageBox.Show(DialogOwner,ex.Message,"Настройки"); }
+            catch(Exception ex) { Notify(ex.Message,"Шаблоны"); }
         }
         private void SaveCsv()
         {
@@ -218,24 +234,16 @@ namespace CadBatch.UI
                         File.WriteAllLines(dialog.FileName,rows,new UTF8Encoding(true));
                     }
             }
-            catch(Exception ex) { MessageBox.Show(DialogOwner,ex.Message,"CSV"); }
+            catch(Exception ex) { Notify(ex.Message,"CSV"); }
         }
         private void ShowDiagnostics()
         {
-            using(var dialog=new Form { Text="Диагностика CAD Batch",Size=new Size(850,500),StartPosition=FormStartPosition.CenterParent })
+            string text=diagnostics.Count==0?"Замечаний нет. Здесь появятся предупреждения поиска и подробности вывода.":string.Join(Environment.NewLine+Environment.NewLine,diagnostics);
+            ModernDialog.Text(DialogHandle,"Диагностика",text,null,("Сохранить в TXT…",owner=>
             {
-                string text=diagnostics.Count==0?"Замечаний нет.":string.Join(Environment.NewLine+Environment.NewLine,diagnostics);
-                var save=new Button {Text="Сохранить диагностику в TXT…",Dock=DockStyle.Bottom,Height=38};
-                save.Click+=(s,e)=>
-                {
-                    using(var file=new SaveFileDialog {Filter="Текстовый отчёт|*.txt",FileName="CadBatch-diagnostics.txt"})
-                        if(file.ShowDialog(dialog)==DialogResult.OK)
-                            try {File.WriteAllText(file.FileName,host.Description+Environment.NewLine+text,Encoding.UTF8);}catch(Exception ex){MessageBox.Show(dialog,ex.Message);}
-                };
-                dialog.Controls.Add(new TextBox { Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,Font=new Font("Consolas",10),Text=text });
-                dialog.Controls.Add(save);
-                dialog.ShowDialog(DialogOwner);
-            }
+                using(var file=new SaveFileDialog {Filter="Текстовый отчёт|*.txt",FileName="CadBatch-diagnostics.txt"})
+                    if(file.ShowDialog(DialogOwner)==DialogResult.OK)File.WriteAllText(file.FileName,host.Description+Environment.NewLine+text,Encoding.UTF8);
+            }));
         }
         private void UpdateCount() { RefreshWorkspaceCount();if(running==null)status.Text=$"Рамок: {frames.Count} • отмечено: {frames.Count(f=>f.Enabled)}"; }
     }

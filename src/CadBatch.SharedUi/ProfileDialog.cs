@@ -37,9 +37,9 @@ namespace CadBatch.UI
             Profile=ProfileStore.Clone(profile);Text="Шаблоны и печать по форматам";Size=new Size(1120,650);MinimumSize=new Size(850,500);StartPosition=FormStartPosition.CenterParent;Font=new Font("Segoe UI",10);
             var top=new FlowLayoutPanel{Dock=DockStyle.Top,Height=95,Padding=new Padding(12),AutoScroll=true};
             top.Controls.Add(new Label{Text="Шаблон:",AutoSize=true,Margin=new Padding(0,7,8,0)});top.Controls.Add(names);ReloadNames();
-            AddButton(top,"Загрузить",()=>{string path=PrintTemplates.PathFor(directory,names.Text);Profile=ProfileStore.Load(path);Fill();});
-            AddButton(top,"Сохранить как",()=>{Commit();string path=PrintTemplates.PathFor(directory,names.Text);ProfileStore.Save(path,Profile);ReloadNames();});
-            AddButton(top,"Удалить",()=>{string path=PrintTemplates.PathFor(directory,names.Text);if(File.Exists(path)&&MessageBox.Show(this,"Удалить шаблон «"+names.Text+"»?","Шаблоны",MessageBoxButtons.YesNo)==DialogResult.Yes){File.Delete(path);ReloadNames();}});
+            AddButton(top,"Загрузить",()=>{if(string.IsNullOrWhiteSpace(names.Text))throw new ArgumentException("Выберите шаблон в списке.");string path=PrintTemplates.PathFor(directory,names.Text);if(!File.Exists(path))throw new ArgumentException("Шаблон «"+names.Text+"» не найден.");Profile=ProfileStore.Load(path);Fill();});
+            AddButton(top,"Сохранить как",()=>{if(string.IsNullOrWhiteSpace(names.Text))throw new ArgumentException("Введите имя шаблона.");Commit();string path=PrintTemplates.PathFor(directory,names.Text);ProfileStore.Save(path,Profile);ReloadNames();});
+            AddButton(top,"Удалить",()=>{string path=PrintTemplates.PathFor(directory,names.Text);if(File.Exists(path)&&ModernDialog.Confirm(Handle,"Удалить шаблон?","Шаблон «"+names.Text+"» будет удалён без возможности восстановления.","Удалить",DialogKind.Warning)){File.Delete(path);names.Text="";ReloadNames();}});
             top.Controls.Add(new Label{Text="Пустые устройство / бумага / стиль и «Общие» берутся из главного окна. Fit: пусто — общая настройка. X/Y — начало печати в мм.\r\nРазмеры формата — мм бумаги. Поворот 180° разворачивает содержимое. Для кратного PDF оставьте бумагу пустой — подбор автоматический.",AutoSize=true,Margin=new Padding(0,10,0,0)});
             table.Dock=DockStyle.Fill;table.AutoGenerateColumns=false;table.BackgroundColor=Color.White;table.AllowUserToOrderColumns=true;
             string[] props={"Name","Width","Height","Device","Media","Style","Color","Fit","Turn180","X","Y"};string[] captions={"Формат","Ширина","Высота","Принтер / PC3","Бумага (canonical)","CTB / STB","Цвет","Fit","180°","X, мм","Y, мм"};
@@ -73,15 +73,15 @@ namespace CadBatch.UI
                         printers.SelectedIndexChanged+=async(sender,args)=>{try{await Reload();}catch(Exception ex){if(!dialog.IsDisposed)loading.Text=ex.Message;}};
                         dialog.Shown+=async(sender,args)=>{try{await Reload();}catch(Exception ex){loading.Text=ex.Message;}};
                         apply.Click+=(sender,args)=>{row.Device=printers.Text;row.Media=media.SelectedIndex==0?"":media.Text;row.Style=styles.SelectedIndex==0?"":styles.Text;table.Refresh();dialog.DialogResult=DialogResult.OK;};
-                        panel.Controls.Add(new Label{Text="Принтер / PC3",AutoSize=true});panel.Controls.Add(printers);panel.Controls.Add(new Label{Text="Бумага",AutoSize=true});panel.Controls.Add(media);panel.Controls.Add(new Label{Text="CTB / STB",AutoSize=true});panel.Controls.Add(styles);panel.Controls.Add(loading);panel.Controls.Add(apply);dialog.Controls.Add(panel);dialog.ShowDialog(this);
+                        panel.Controls.Add(new Label{Text="Принтер / PC3",AutoSize=true});panel.Controls.Add(printers);panel.Controls.Add(new Label{Text="Бумага",AutoSize=true});panel.Controls.Add(media);panel.Controls.Add(new Label{Text="CTB / STB",AutoSize=true});panel.Controls.Add(styles);panel.Controls.Add(loading);panel.Controls.Add(apply);dialog.Controls.Add(panel);WinFormsLook.Primary(apply);WinFormsLook.Apply(dialog);dialog.ShowDialog(this);
                     }
-                }catch(Exception ex){if(!IsDisposed)MessageBox.Show(this,ex.Message,"Устройства AutoCAD");}
+                }catch(Exception ex){if(!IsDisposed)ModernDialog.Message(Handle,"Устройства AutoCAD",ex.Message,DialogKind.Warning);}
             };
-            Controls.Add(table);Controls.Add(top);Controls.Add(bottom);
+            Controls.Add(table);Controls.Add(top);Controls.Add(bottom);WinFormsLook.Apply(this);
         }
         private void Fill(){rows=new BindingList<TemplateFormatRow>(Profile.Formats.Select(TemplateFormatRow.From).ToList());table.DataSource=rows;}
         private void Commit(){if(!table.EndEdit())throw new ArgumentException("Завершите редактирование ячейки.");var formats=rows.Select(r=>r.ToFormat()).ToList();var old=Profile.Formats;Profile.Formats=formats;try{Profile.Validate();}catch{Profile.Formats=old;throw;}}
         private void ReloadNames(){string selected=names.Text;names.Items.Clear();if(Directory.Exists(directory))names.Items.AddRange(Directory.GetFiles(directory,"*.json").Select(Path.GetFileNameWithoutExtension).Cast<object>().ToArray());names.Text=selected;}
-        private void AddButton(Control target,string text,Action action){var button=new Button{Text=text,AutoSize=true};button.Click+=(s,e)=>{try{action();}catch(Exception ex){MessageBox.Show(this,ex.Message,"Шаблоны");}};target.Controls.Add(button);}
+        private void AddButton(Control target,string text,Action action){var button=new Button{Text=text,AutoSize=true};button.Click+=(s,e)=>{try{action();}catch(Exception ex){ModernDialog.Message(Handle,"Шаблоны",ex.Message,DialogKind.Warning);}};target.Controls.Add(button);if(text=="Применить")WinFormsLook.Primary(button);}
     }
 }

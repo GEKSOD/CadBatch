@@ -63,7 +63,7 @@ namespace CadBatch.UI
         }
         private ToolStripMenuItem Item(ToolStripMenuItem menu,string text,Action action,bool cad=false)
         {
-            var item=new ToolStripMenuItem(text){Enabled=!cad||host.CanPlot};item.Click+=(s,e)=>{if(running!=null)return;try{action();}catch(Exception ex){MessageBox.Show(DialogOwner,ex.Message,"CAD Batch",MessageBoxButtons.OK,MessageBoxIcon.Warning);}};
+            var item=new ToolStripMenuItem(text){Enabled=!cad||host.CanPlot};item.Click+=(s,e)=>{if(running!=null)return;try{action();}catch(Exception ex){Notify(ex.Message,ex is ArgumentException?"Проверьте данные":"Не получилось");}};
             menu.DropDownItems.Add(item);return item;
         }
         private void SaveVisiblePdfName()
@@ -155,7 +155,7 @@ namespace CadBatch.UI
         private void NumberRows()
         {
             grid.EndEdit();var values=AskValues("Нумерация отмеченных строк",("Первый номер","1"),("Шаг","1"),("Цифр (0 — без нулей)","0"),("Префикс",""),("Суффикс",""));if(values==null)return;
-            var plan=Numbering.Plan(frames,int.Parse(values[0]),int.Parse(values[1]),values[3],values[4],int.Parse(values[2]));
+            var plan=Numbering.Plan(frames,Integer(values[0],"Первый номер"),Integer(values[1],"Шаг"),values[3],values[4],Integer(values[2],"Цифр"));
             if(plan.Count==0)throw new ArgumentException("Нет отмеченных строк.");
             if(!ShowText("План нумерации",string.Join(Environment.NewLine,plan.Select(p=>"Страница "+p.Frame.Page+": «"+p.OldNumber+"» → «"+p.NewNumber+"»"))+"\r\n\r\nМеняются значения в таблице задания. Для записи в DWG используйте меню «Чертёж → Записать номера в атрибуты».","Применить к таблице"))return;
             foreach(var p in plan)p.Frame.SheetNumber=p.NewNumber;frames.ResetBindings();
@@ -255,7 +255,7 @@ namespace CadBatch.UI
                 {
                     if(output.ShowDialog(DialogOwner)!=DialogResult.OK)return;var values=AskValues("Размещение моделей",("Колонок (1 — одна колонка)","2"),("Интервал, единицы DWG","100"),("Общий масштаб","1"));if(values==null)return;
                     if(!ShowText("План сборки",string.Join(Environment.NewLine,files.FileNames.Select((f,i)=>(i+1)+". "+f))+"\r\n\r\nВыводится модель каждого DWG отдельным блоком. Единицы INSUNITS должны совпадать. Слои и блоки изолируются. Растры и подложки остаются внешними ссылками.","Собрать DWG"))return;
-                    await RunOperationAsync(new CadOperationRequest{Operation=CadOperation.MergeDrawings,Files=files.FileNames,Folder=Path.GetDirectoryName(output.FileName)!,NamePattern=Path.GetFileNameWithoutExtension(output.FileName),Columns=int.Parse(values[0]),Spacing=Number(values[1]),Scale=Number(values[2])});
+                    await RunOperationAsync(new CadOperationRequest{Operation=CadOperation.MergeDrawings,Files=files.FileNames,Folder=Path.GetDirectoryName(output.FileName)!,NamePattern=Path.GetFileNameWithoutExtension(output.FileName),Columns=Integer(values[0],"Колонок"),Spacing=Number(values[1]),Scale=Number(values[2])});
                 }
             }
         }
@@ -264,51 +264,23 @@ namespace CadBatch.UI
             using(var files=new OpenFileDialog{Filter="Растры|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp",Multiselect=true})
             {
                 if(files.ShowDialog(DialogOwner)!=DialogResult.OK)return;var values=AskValues("Размещение растров",("Ширина каждой картинки в единицах DWG","297"),("Колонок","2"),("Интервал, единицы DWG","20"));if(values==null)return;
-                await RunOperationAsync(new CadOperationRequest{Operation=CadOperation.InsertRasters,Files=files.FileNames,Scale=Number(values[0]),Columns=int.Parse(values[1]),Spacing=Number(values[2])});
+                await RunOperationAsync(new CadOperationRequest{Operation=CadOperation.InsertRasters,Files=files.FileNames,Scale=Number(values[0]),Columns=Integer(values[1],"Колонок"),Spacing=Number(values[2])});
             }
         }
         private async Task PrintAsync()
         {
             ReadProfile();var selected=CheckedFrames();var devices=(await host.GetPlotDevicesAsync()).Where(d=>d.IndexOf("pdf",StringComparison.OrdinalIgnoreCase)<0&&d.IndexOf("dwf",StringComparison.OrdinalIgnoreCase)<0&&d.IndexOf("xps",StringComparison.OrdinalIgnoreCase)<0&&d!="None").ToArray();
             if(devices.Length==0)throw new InvalidOperationException("AutoCAD не вернул обычных принтеров. Установите принтер на этом ПК.");
-            using(var dialog=new Form{Text="Принтер / плоттер",Size=new Size(600,160),StartPosition=FormStartPosition.CenterParent,Font=Font})
             {
-                var combo=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Dock=DockStyle.Top};combo.Items.AddRange(devices);combo.SelectedIndex=0;dialog.Controls.Add(combo);
-                var button=new Button{Text="Далее",Dock=DockStyle.Bottom,Height=38,DialogResult=DialogResult.OK};dialog.Controls.Add(button);dialog.AcceptButton=button;
-                if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;string printer=Convert.ToString(combo.SelectedItem)??"";
+                string? printer=ModernDialog.Choice(DialogHandle,"Принтер или плоттер","Выберите устройство Windows для печати отмеченных листов.",devices);if(printer==null)return;
                 if(!ShowText("План физической печати","Принтер: "+printer+"\r\nРамок: "+selected.Count+"; страниц с копиями: "+selected.Sum(f=>f.Copies)+"\r\n\r\n"+string.Join(Environment.NewLine,selected.Select(f=>f.Page+". "+f.FormatName+" × "+f.Copies+(string.IsNullOrWhiteSpace(f.Device)?"":"; устройство строки: "+f.Device)))+"\r\n\r\nЗадания будут переданы в очередь Windows. Отмена не удаляет уже переданные задания. Используется текущее значение «Вписать в бумагу».","Отправить в печать"))return;
                 var request=new ExportRequest{PhysicalPrint=true,Device=printer,StyleSheet=profile.StyleSheet,ColorMode=profile.ColorMode,FitToPaper=fit.Checked,Items=selected.Select(f=>new OutputItem{Frame=f,Path=Path.Combine(Path.GetTempPath(),"print-"+Guid.NewGuid().ToString("N")+".pdf")}).ToList()};
                 var report=await host.ExportAsync(request,ExportProgress(),running!.Token);string text=ExportReportText.Format(report,request,host.Description);string path=SaveOperationReport(text);diagnostics.Add(text);ShowText("Результат передачи в печать",text+"\r\nОтчёт: "+path);
             }
         }
-        private string[]? AskValues(string title,params (string Label,string Value)[] fields)
-        {
-            using(var dialog=new Form{Text=title,Size=new Size(680,125+fields.Length*55),StartPosition=FormStartPosition.CenterParent,Font=Font,MinimizeBox=false,MaximizeBox=false})
-            {
-                var panel=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(14),ColumnCount=1,RowCount=fields.Length*2+1};var boxes=new List<TextBox>();
-                foreach(var field in fields){panel.Controls.Add(new Label{Text=field.Label,AutoSize=true,Margin=new Padding(0,6,0,3)});var box=new TextBox{Text=field.Value,Dock=DockStyle.Top};boxes.Add(box);panel.Controls.Add(box);}
-                var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=42,FlowDirection=FlowDirection.RightToLeft};var ok=new Button{Text="Продолжить",DialogResult=DialogResult.OK,AutoSize=true};var cancelButton=new Button{Text="Отмена",DialogResult=DialogResult.Cancel,AutoSize=true};buttons.Controls.Add(ok);buttons.Controls.Add(cancelButton);
-                dialog.Controls.Add(panel);dialog.Controls.Add(buttons);dialog.AcceptButton=ok;dialog.CancelButton=cancelButton;return dialog.ShowDialog(DialogOwner)==DialogResult.OK?boxes.Select(b=>b.Text).ToArray():null;
-            }
-        }
-        private bool[]? AskChecks(string title,(string Label,bool Value)[] fields)
-        {
-            using(var dialog=new Form{Text=title,Size=new Size(760,Math.Min(650,140+fields.Length*35)),StartPosition=FormStartPosition.CenterParent,Font=Font})
-            {
-                var panel=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,Padding=new Padding(14),WrapContents=false,AutoScroll=true};var checks=fields.Select(f=>new CheckBox{Text=f.Label,Checked=f.Value,AutoSize=true,Margin=new Padding(0,6,0,6)}).ToArray();panel.Controls.AddRange(checks);
-                var ok=new Button{Text="Применить",Dock=DockStyle.Bottom,Height=38,DialogResult=DialogResult.OK};dialog.Controls.Add(panel);dialog.Controls.Add(ok);dialog.AcceptButton=ok;return dialog.ShowDialog(DialogOwner)==DialogResult.OK?checks.Select(c=>c.Checked).ToArray():null;
-            }
-        }
-        private bool ShowText(string title,string text,string? apply=null)
-        {
-            using(var dialog=new Form{Text=title,Size=new Size(900,560),StartPosition=FormStartPosition.CenterParent,Font=Font})
-            {
-                var box=new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,WordWrap=false,Dock=DockStyle.Fill,Font=new Font("Consolas",10),Text=text};
-                var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=42,FlowDirection=FlowDirection.RightToLeft};var close=new Button{Text=apply==null?"Закрыть":"Отмена",DialogResult=DialogResult.Cancel,AutoSize=true};buttons.Controls.Add(close);
-                if(apply!=null){var ok=new Button{Text=apply,DialogResult=DialogResult.OK,AutoSize=true};buttons.Controls.Add(ok);dialog.AcceptButton=ok;}
-                dialog.Controls.Add(box);dialog.Controls.Add(buttons);dialog.CancelButton=close;return dialog.ShowDialog(DialogOwner)==DialogResult.OK;
-            }
-        }
+        private string[]? AskValues(string title,params (string Label,string Value)[] fields)=>ModernDialog.Values(DialogHandle,title,null,fields);
+        private bool[]? AskChecks(string title,(string Label,bool Value)[] fields)=>ModernDialog.Checks(DialogHandle,title,null,fields);
+        private bool ShowText(string title,string text,string? apply=null)=>ModernDialog.Text(DialogHandle,title,text,apply);
         private void SaveRegisterCsv()
         {
             var selected=CheckedFrames();using(var dialog=new SaveFileDialog{Filter="CSV UTF-8|*.csv",FileName="Ведомость.csv"})if(dialog.ShowDialog(DialogOwner)==DialogResult.OK)RegisterExport.Csv(dialog.FileName,selected);

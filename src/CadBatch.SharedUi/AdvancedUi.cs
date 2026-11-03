@@ -117,8 +117,8 @@ namespace CadBatch.UI
                 var tools=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=80,Padding=new Padding(8)};var enabled=new CheckBox{Text="Читать текст и таблицы",Checked=current.Enabled,AutoSize=true};
                 var spds=new Button{Text="Зоны СПДС",AutoSize=true};var eskd=new Button{Text="Зоны ЕСКД",AutoSize=true};
                 Action<List<StampFieldZone>> replace=zones=>{rows.Clear();foreach(var z in zones)rows.Add(z);};spds.Click+=(s,e)=>replace(StampMetadataSettings.SpdsZones());eskd.Click+=(s,e)=>replace(StampMetadataSettings.EskdZones());
-                var ok=new Button{Text="Применить",AutoSize=true};ok.Click+=(s,e)=>{try{table.EndEdit();var settings=new StampMetadataSettings{Enabled=enabled.Checked,Form="Пользовательские зоны",Zones=rows.ToList()};settings.Validate();profile.Metadata=settings;changed=true;dialog.DialogResult=DialogResult.OK;}catch(Exception ex){MessageBox.Show(dialog,ex.Message);}};
-                Add(tools,enabled,spds,eskd,ok);Add(dialog,table,info,tools);dialog.ShowDialog(DialogOwner);
+                var ok=new Button{Text="Применить",AutoSize=true};ok.Click+=(s,e)=>{try{table.EndEdit();var settings=new StampMetadataSettings{Enabled=enabled.Checked,Form="Пользовательские зоны",Zones=rows.ToList()};settings.Validate();profile.Metadata=settings;changed=true;dialog.DialogResult=DialogResult.OK;}catch(Exception ex){ModernDialog.Message(dialog.Handle,"Проверьте зоны",ex.Message,DialogKind.Warning);}};
+                Add(tools,enabled,spds,eskd,ok);Add(dialog,table,info,tools);WinFormsLook.Primary(ok);WinFormsLook.Apply(dialog);dialog.ShowDialog(DialogOwner);
             }
             if(changed)MarkScaleDirty();
         }
