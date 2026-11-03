@@ -1,0 +1,6 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/CadBatch.Updates/CadBatch.Updates.csproj" /><ProjectReference Include="../../src/CadBatch.Core/CadBatch.Core.csproj" />
+    <ProjectReference Include="../../src/CadBatch.Transport/CadBatch.Transport.csproj" /><ProjectReference Include="../../src/CadBatch.Pdf/CadBatch.Pdf.csproj" /></ItemGroup>
+</Project>

@@ -1,0 +1,103 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+
+namespace CadBatch.Core
+{
+    public static class FrameDetection
+    {
+        public static ScanResult Detect(IEnumerable<FrameCandidate> candidates, SearchOptions options,
+            IReadOnlyList<FormatDefinition> formats, CancellationToken cancellation,IReadOnlyList<StampSegment>? stampGeometry=null)
+        {
+            options.Validate();
+            if (formats.Count == 0 || formats.Any(f => !Numeric.Positive(f.WidthMm) || !Numeric.Positive(f.HeightMm))) throw new ArgumentException("Некорректный каталог форматов.");
+            var result = new ScanResult();
+            var stampIndex=options.Stamp?.Enabled==true?new StampScaleIndex(stampGeometry??Array.Empty<StampSegment>()):null;
+            int stampsFound=0,fallbacks=0;
+            var identities = new HashSet<string>(StringComparer.Ordinal);
+            // Spatial buckets avoid a quadratic search through all detected frames.
+            var buckets = new Dictionary<string,List<DetectedFrame>>(StringComparer.Ordinal);
+            double bucketSize = Math.Max(options.GeometryTolerance * 2, 0.001);
+            foreach (var c in candidates)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                result.ObjectsVisited++;
+                if (!Wildcard(c.Layer,options.LayerPattern) || (!string.IsNullOrEmpty(c.BlockName) && !Wildcard(c.BlockName,options.BlockPattern))) continue;
+                if (!Rectangle2.TryCreate(c.Vertices, options.GeometryTolerance, out var geometry)) continue;
+                StampScaleEvidence? evidence=null;IEnumerable<double> scales=options.Scales;
+                if(stampIndex!=null)
+                {
+                    var stamp=stampIndex.Infer(c,geometry!,formats,options,cancellation);
+                    if(stamp.Ambiguous){result.Warnings.Add(c.DocumentName+" / "+c.HandlePath+": несколько штампов дают разные масштабы. Укажите масштаб вручную и повторите поиск.");continue;}
+                    evidence=stamp.Evidence;
+                    if(evidence!=null)scales=new[]{evidence.Scale};
+                    else if(options.Stamp!.OnlyStamp)continue;
+                }
+                double best = double.MaxValue; FormatDefinition? match = null; double scale = 0;
+                foreach (var s in scales)
+                    foreach (var f in formats)
+                    {
+                        double a = geometry!.Width / s, b = geometry.Height / s;
+                        foreach (bool swap in new[] { false, true })
+                        {
+                            double dw = Math.Abs(a - (swap ? f.HeightMm : f.WidthMm));
+                            double dh = Math.Abs(b - (swap ? f.WidthMm : f.HeightMm));
+                            double error = dw / f.WidthMm + dh / f.HeightMm;
+                            if (dw <= options.SizeToleranceMm && dh <= options.SizeToleranceMm && error < best)
+                            { best = error; match = f; scale = s; }
+                        }
+                    }
+                if (match == null) continue;
+                if (!identities.Add(c.Key)) { result.Duplicates++; continue; }
+                long bx = (long)Math.Floor(geometry!.Center.X / bucketSize), by = (long)Math.Floor(geometry.Center.Y / bucketSize);
+                DetectedFrame? overlap = null;
+                for (int x = -1; x <= 1 && overlap == null; x++)
+                    for (int y = -1; y <= 1 && overlap == null; y++)
+                        if (buckets.TryGetValue(Bucket(c, bx+x, by+y), out var nearby))
+                            overlap = nearby.FirstOrDefault(f => f.Geometry.SameBoundary(geometry, options.GeometryTolerance));
+                if (overlap != null)
+                {
+                    result.Duplicates++;
+                    overlap.Status = "Совпадающие контуры: проверьте";
+                    result.Warnings.Add(c.DocumentName + ": совпадающая рамка " + c.HandlePath + " / " + overlap.Source.HandlePath);
+                    continue;
+                }
+                var frame = new DetectedFrame { Source = c, Geometry = geometry, Format = match, Scale = scale,StampEvidence=evidence };
+                if(evidence!=null)stampsFound++;else if(stampIndex!=null)fallbacks++;
+                frame.SheetNumber = ReadAttribute(c, "SHEET", "SHEETNUMBER", "ЛИСТ", "НОМЕР_ЛИСТА");
+                frame.Title = ReadAttribute(c, "TITLE", "НАИМЕНОВАНИЕ", "NAME");
+                frame.Code = ReadAttribute(c, "CODE", "ШИФР", "ОБОЗНАЧЕНИЕ");
+                frame.Revision=ReadAttribute(c,"REVISION","REV","РЕВИЗИЯ","ИЗМ");
+                foreach(var attribute in c.Attributes)frame.Metadata[attribute.Key]=attribute.Value;
+                result.Frames.Add(frame);
+                string key = Bucket(c, bx, by);
+                if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = new List<DetectedFrame>();
+                list.Add(frame);
+            }
+            result.Frames.Sort((a,b) =>
+            {
+                int v = StringComparer.OrdinalIgnoreCase.Compare(a.Source.DocumentKey,b.Source.DocumentKey);
+                if (v == 0) v = StringComparer.Ordinal.Compare(a.Layout,b.Layout);
+                if (v == 0) v = b.Geometry.Center.Y.CompareTo(a.Geometry.Center.Y);
+                if (v == 0) v = a.Geometry.Center.X.CompareTo(b.Geometry.Center.X);
+                return v;
+            });
+            for (int i=0;i<result.Frames.Count;i++) result.Frames[i].Page = i+1;
+            if(stampIndex!=null&&(fallbacks>0||stampsFound==0))result.Warnings.Add("Масштаб по штампу подтверждён у рамок: "+stampsFound+"; использован список масштабов: "+fallbacks+". Проверьте параметры штампа и колонку «Источник масштаба».");
+            return result;
+        }
+        private static string Bucket(FrameCandidate c,long x,long y) => c.DocumentKey + "|" + c.Layout + "|" + x + ":" + y;
+        public static string ReadAttribute(FrameCandidate c,params string[] names)
+        {
+            foreach (var name in names) if (c.Attributes.TryGetValue(name,out var value) && !string.IsNullOrWhiteSpace(value)) return value.Trim();
+            return "";
+        }
+        public static bool Wildcard(string value,string pattern)
+        {
+            if (string.IsNullOrWhiteSpace(pattern) || pattern == "*") return true;
+            return Regex.IsMatch(value,"^" + Regex.Escape(pattern).Replace("\\*", ".*").Replace("\\?", ".") + "$",RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,TimeSpan.FromSeconds(1));
+        }
+    }
+}

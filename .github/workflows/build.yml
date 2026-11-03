@@ -1,0 +1,25 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build and verify
+        shell: pwsh
+        run: ./scripts/build.ps1 -Restore
+      - name: Check local connection protocol
+        shell: pwsh
+        run: |
+          $p=Start-Process src/CadBatch.Desktop/bin/Release/net8.0-windows/CadBatch.exe -ArgumentList '--bridge-smoke',artifacts/verification/bridge.txt -PassThru -Wait -WindowStyle Hidden
+          if($p.ExitCode -ne 0){throw 'IPC smoke failed'}
