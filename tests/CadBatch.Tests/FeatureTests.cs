@@ -78,7 +78,7 @@ internal static partial class Program
         {
             using(var cancel=new CancellationTokenSource()){cancel.Cancel();Throws<OperationCanceledException>(()=>LineFrames.Find(Segments(Box(0,0,420,297)),FormatDefinition.Defaults(),new SearchOptions(),cancel.Token));}
         });
-        string directory=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","features");Directory.CreateDirectory(directory);
+        string directory=Path.Combine(TestRoot,"artifacts","verification","features");Directory.CreateDirectory(directory);
         Run("Grouped PDF separates same-named documents by full identity",()=>
         {
             var a=F("A");var b=F("B");b.Source.DocumentPath="C:\\Other\\Test.dwg";b.Source.DocumentKey="other";
@@ -137,7 +137,7 @@ internal static partial class Program
         });
         Run("Mixed-size PDF merge retains rotation page boxes and bookmarks",()=>
         {
-            string vector="artifacts/verification/carrier-vector-test.pdf",native="artifacts/verification/native-crop-test.pdf";if(!File.Exists(native))native=vector;
+            string vector=Path.Combine(TestRoot,"artifacts/verification/carrier-vector-test.pdf"),native=Path.Combine(TestRoot,"artifacts/verification/native-crop-test.pdf");if(!File.Exists(native))native=vector;
             string path=Path.Combine(directory,"combined.pdf");TargetSheetPdf.Merge(new[]{vector,native},path,new[]{"001 — Общие данные","002 — План"});
             using(var pdf=PdfSharp.Pdf.IO.PdfReader.Open(path,PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
             {
@@ -152,7 +152,7 @@ internal static partial class Program
         });
         Run("Real AutoCAD pages merge across drawings without changing page count",()=>
         {
-            string[] folders={"artifacts/feedback/20261102-batch","artifacts/feedback/real-drawing-20261102"};
+            string[] folders={Path.Combine(TestRoot,"artifacts/feedback/20261102-batch"),Path.Combine(TestRoot,"artifacts/feedback/real-drawing-20261102")};
             var pages=folders.Where(Directory.Exists).SelectMany(d=>Directory.GetFiles(d,"*.pdf").OrderBy(Path.GetFileName,StringComparer.OrdinalIgnoreCase)).ToArray();
             if(pages.Length==0)return;string path=Path.Combine(directory,"combined-real.pdf");TargetSheetPdf.Merge(pages,path,pages.Select(Path.GetFileNameWithoutExtension).ToArray()!);
             using(var pdf=PdfSharp.Pdf.IO.PdfReader.Open(path,PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))Assert(pdf.PageCount==pages.Length&&pdf.Outlines.Count==pages.Length);
@@ -172,20 +172,20 @@ internal static partial class Program
         });
         Run("Vector PDF tiles retain target paper dimensions and bookmarks",()=>
         {
-            string source="artifacts/verification/carrier-vector-test.pdf",output=Path.Combine(directory,"tiles-vector.pdf");
+            string source=Path.Combine(TestRoot,"artifacts/verification/carrier-vector-test.pdf"),output=Path.Combine(directory,"tiles-vector.pdf");
             var plan=TargetSheetPdf.PlanTiles(source,297,210,10,5,1);TargetSheetPdf.Tile(source,output,plan);
             using(var pdf=PdfSharp.Pdf.IO.PdfReader.Open(output,PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
             {Assert(pdf.PageCount==plan.Count&&pdf.Outlines.Count==plan.Count);foreach(var page in pdf.Pages){Equal(page.MediaBox.Width*25.4/72,297,.001);Equal(page.MediaBox.Height*25.4/72,210,.001);}}
         });
         Run("Rotated native PDF tile plan uses displayed orientation",()=>
         {
-            string source="artifacts/verification/native-crop-test.pdf";if(!File.Exists(source))return;
+            string source=Path.Combine(TestRoot,"artifacts/verification/native-crop-test.pdf");if(!File.Exists(source))return;
             var plan=TargetSheetPdf.PlanTiles(source,210,297,10,5,1);Equal(plan.ContentWidthMm,594,.001);Equal(plan.ContentHeightMm,420,.001);
             TargetSheetPdf.Tile(source,Path.Combine(directory,"tiles-native.pdf"),plan);
         });
         Run("Cancelled PDF tiling preserves an existing destination",()=>
         {
-            string source="artifacts/verification/carrier-vector-test.pdf",output=Path.Combine(directory,"tile-cancel.pdf");File.WriteAllText(output,"original");
+            string source=Path.Combine(TestRoot,"artifacts/verification/carrier-vector-test.pdf"),output=Path.Combine(directory,"tile-cancel.pdf");File.WriteAllText(output,"original");
             var plan=TargetSheetPdf.PlanTiles(source,210,297,10,5,1);using(var cancel=new CancellationTokenSource())
             {cancel.Cancel();Throws<OperationCanceledException>(()=>TargetSheetPdf.Tile(source,output,plan,cancel.Token));Assert(File.ReadAllText(output)=="original");}
         });

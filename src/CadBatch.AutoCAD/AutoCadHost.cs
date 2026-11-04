@@ -397,7 +397,7 @@ namespace CadBatch.AutoCAD
                             if(file.Length<100 || file.Read(header,0,5)!=5 || System.Text.Encoding.ASCII.GetString(header)!="%PDF-")throw new IOException("PDF-драйвер не создал корректный файл.");
                         }
                     });
-                    trace.Step("Сохранение итогового PDF",()=>File.Move(temporary,item.Path));
+                    trace.Step("Сохранение итогового PDF",()=>OutputFiles.MoveReplacing(temporary,item.Path));
                 }
             }
             finally {if(File.Exists(temporary))File.Delete(temporary);if(File.Exists(cropped))File.Delete(cropped);}

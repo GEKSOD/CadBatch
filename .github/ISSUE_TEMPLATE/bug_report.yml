@@ -1,0 +1,53 @@
+name: Сообщить об ошибке
+description: Что-то работает не так, как ожидалось
+labels: [ошибка]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что сообщаете! Быстрее всего помогает архив диагностики:
+        в CAD Batch откройте **Справка → Собрать диагностику (ZIP)…** и приложите файл ниже.
+        Чертежей в нём нет. Пожалуйста, не прикладывайте рабочие DWG без необходимости.
+  - type: input
+    id: version
+    attributes:
+      label: Версия CAD Batch
+      description: Видна на начальном экране («Версия …»)
+      placeholder: "0.8.0"
+    validations:
+      required: true
+  - type: input
+    id: autocad
+    attributes:
+      label: Версия AutoCAD
+      description: Например, AutoCAD 2024 или Civil 3D 2025
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Что вы делали
+      description: По шагам, что нажимали
+      placeholder: |
+        1. Нажал «Найти рамки»
+        2. Нажал «Сохранить 12 листов»
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Что произошло и что ожидалось
+    validations:
+      required: true
+  - type: textarea
+    id: cadinfo
+    attributes:
+      label: Вывод команды CADBATCHINFO
+      description: Введите CADBATCHINFO в командной строке AutoCAD и скопируйте строку
+      render: text
+  - type: textarea
+    id: files
+    attributes:
+      label: Архив диагностики и снимки экрана
+      description: Перетащите сюда файл CadBatch-диагностика-….zip и снимки экрана

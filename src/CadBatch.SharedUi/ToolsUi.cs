@@ -28,7 +28,7 @@ namespace CadBatch.UI
             var job=new ToolStripMenuItem("Задание");toolsMenu.Items.Add(job);
             Item(job,"Сохранить задание…",SaveJob);Item(job,"Открыть задание…",async()=>await RunAsync(LoadJobAsync));
             Item(job,"Проверить номера листов",()=>ShowText("Проверка номеров",string.Join(Environment.NewLine,Numbering.Warnings(frames).DefaultIfEmpty("Пустых и повторяющихся номеров нет."))));
-            Item(job,"По первой выбранной строке…",CopyFirst);Item(job,"Загрузить названия и номера из ведомости…",ImportRegister);Item(job,"Ведомость в CSV…",SaveRegisterCsv);Item(job,"Ведомость в XLSX…",SaveRegisterXlsx);
+            Item(job,"По первой выбранной строке…",CopyFirst);Item(job,"Загрузить названия и номера из ведомости…",ImportRegister);Item(job,"ИУЛ для готовых файлов…",IulForFiles);Item(job,"Ведомость в CSV…",SaveRegisterCsv);Item(job,"Ведомость в XLSX…",SaveRegisterXlsx);
             var order=new ToolStripMenuItem("Порядок");toolsMenu.Items.Add(order);
             string[] labels={"Строками: слева направо","Строками: справа налево","Строками: снизу вверх","Столбцами: сверху вниз","Столбцами: снизу вверх","По номеру листа","По формату","По документу","По шифру"};
             for(int i=0;i<labels.Length;i++){var mode=(FrameSort)i;Item(order,labels[i],()=>ReplaceFrames(FrameOrder.Sort(frames,mode,sortTolerance)));}

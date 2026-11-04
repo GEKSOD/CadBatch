@@ -98,6 +98,17 @@ namespace CadBatch.Setup
                 if(newApp&&Directory.Exists(current))DeleteOwn(current,Root);if(oldApp&&Directory.Exists(backup))Directory.Move(backup,current);throw;
             }
             finally{if(Directory.Exists(stage))DeleteOwn(stage,Root);if(Directory.Exists(pluginStage))DeleteOwn(pluginStage,PluginRoot);}
+            // The new version is in place: the previous copy and leftovers of interrupted runs are no longer needed.
+            RemoveLeftovers();
+        }
+        // Best effort: a locked file only keeps its folder until the next update, it never fails the installation.
+        private static void RemoveLeftovers()
+        {
+            foreach(var (parent,pattern) in new[]{(Root,"backup-*"),(Root,"stage-*"),(PluginRoot,"CadBatch.backup-*"),(PluginRoot,"CadBatch.stage-*")})
+            {
+                if(!Directory.Exists(parent))continue;
+                foreach(string folder in Directory.GetDirectories(parent,pattern))try{DeleteOwn(folder,parent);}catch(IOException){}catch(UnauthorizedAccessException){}
+            }
         }
         private static void DeleteOwn(string directory,string parent)
         {
@@ -112,7 +123,7 @@ namespace CadBatch.Setup
         {
             EnsureClosed();NoLinks(Root);if(!File.Exists(Child(Root,"product.id"))||File.ReadAllText(Child(Root,"product.id"))!=Product)throw new IOException("Не найдена установка CAD Batch.");
             if(MessageBox.Show("Удалить CAD Batch и компонент AutoCAD? Настройки пользователя и созданные PDF сохранятся.","Удаление CAD Batch",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
-            string bundle=Child(PluginRoot,"CadBatch.bundle");if(Directory.Exists(bundle))DeleteOwn(bundle,PluginRoot);
+            string bundle=Child(PluginRoot,"CadBatch.bundle");if(Directory.Exists(bundle))DeleteOwn(bundle,PluginRoot);RemoveLeftovers();
             foreach(string folder in new[]{Environment.GetFolderPath(Environment.SpecialFolder.Programs),Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)}){string shortcut=Path.Combine(folder,"CAD Batch.lnk");if(File.Exists(shortcut))File.Delete(shortcut);}
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\CadBatch",false);
             string safe=Root.Replace("'","''"),script="$p="+Process.GetCurrentProcess().Id+"; while(Get-Process -Id $p -ErrorAction SilentlyContinue){Start-Sleep -Milliseconds 200}; $r='"+safe+"'; if((Get-Content -LiteralPath (Join-Path $r 'product.id') -Raw) -eq 'CadBatch.Desktop'){Remove-Item -LiteralPath $r -Recurse -Force}";

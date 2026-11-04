@@ -19,7 +19,7 @@ namespace CadBatch.AutoCAD
                 var dispatcher=System.Windows.Threading.Dispatcher.CurrentDispatcher;
                 bridge=new HostBridge(new AutoCadHost(),async action=>await (await dispatcher.InvokeAsync(action)),System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","bridge"));
             }
-            catch(System.Exception ex){AcApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\nCAD Batch: компонент подключения не запущен: "+ex.Message+"\n");}
+            catch(System.Exception ex){ErrorLog.Write("Запуск компонента AutoCAD",ex);AcApp.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\nCAD Batch: компонент подключения не запущен: "+ex.Message+"\n");}
         }
         public void Terminate(){bridge?.Dispose();}
         [CommandMethod("CADBATCH",CommandFlags.Session)]

@@ -1,6 +1,6 @@
 # Публикация выпуска
 
-1. Измените версию в Directory.Build.props, ProductInfo и PackageContents.xml.
+1. Измените версию только в Directory.Build.props: приложение, компонент AutoCAD и PackageContents.xml получают её оттуда. Добавьте docs/Release-X.Y.Z.md и запись в CHANGELOG.md.
 2. Выполните сборку и проверки, включая tests, bridge smoke и настоящий AutoCAD.
 3. Запустите scripts/package.ps1. По умолчанию собирается автономное Windows x64 приложение с .NET 10.0.14.
 4. Проверьте EXE через --smoke в пустом временном каталоге, переносной архив и список SHA256SUMS.txt.

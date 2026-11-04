@@ -16,7 +16,8 @@
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="AutoCAD.NET" Version="24.2.0" ExcludeAssets="runtime" PrivateAssets="all" />
+    <!-- Built against the oldest R24 (AutoCAD 2021) so one component loads in 2021-2024. -->
+    <PackageReference Include="AutoCAD.NET" Version="24.0.0" ExcludeAssets="runtime" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <PackageReference Include="AutoCAD.NET" Version="25.0.1" ExcludeAssets="runtime" PrivateAssets="all" />

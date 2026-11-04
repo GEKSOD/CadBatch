@@ -23,10 +23,22 @@ namespace CadBatch.Core
         public static List<string[]> Read(string path)
         {
             string extension=Path.GetExtension(path).ToLowerInvariant();
-            if(extension==".csv")return ReadCsv(File.ReadAllText(path));
+            if(extension==".csv")return ReadCsv(ReadText(File.ReadAllBytes(path)));
             if(extension==".xlsx")return ReadXlsx(path);
             throw new ArgumentException("Выберите ведомость в формате CSV или XLSX.");
         }
+        // Excel in Russian Windows saves "CSV" in Windows-1251. Valid UTF-8 (with or without BOM) is read as UTF-8, anything else as 1251.
+        public static string ReadText(byte[] bytes)
+        {
+            if(bytes.Length>=3&&bytes[0]==0xEF&&bytes[1]==0xBB&&bytes[2]==0xBF)return Encoding.UTF8.GetString(bytes,3,bytes.Length-3);
+            try{return new UTF8Encoding(false,true).GetString(bytes);}
+            catch(DecoderFallbackException)
+            {
+                var text=new StringBuilder(bytes.Length);foreach(byte b in bytes)text.Append(b<0x80?(char)b:Cp1251[b-0x80]);return text.ToString();
+            }
+        }
+        // Upper half of Windows-1251, generated from the reference code page (0x98 is unassigned).
+        private const string Cp1251="\u0402\u0403\u201A\u0453\u201E\u2026\u2020\u2021\u20AC\u2030\u0409\u2039\u040A\u040C\u040B\u040F\u0452\u2018\u2019\u201C\u201D\u2022\u2013\u2014\uFFFD\u2122\u0459\u203A\u045A\u045C\u045B\u045F\u00A0\u040E\u045E\u0408\u00A4\u0490\u00A6\u00A7\u0401\u00A9\u0404\u00AB\u00AC\u00AD\u00AE\u0407\u00B0\u00B1\u0406\u0456\u0491\u00B5\u00B6\u00B7\u0451\u2116\u0454\u00BB\u0458\u0405\u0455\u0457\u0410\u0411\u0412\u0413\u0414\u0415\u0416\u0417\u0418\u0419\u041A\u041B\u041C\u041D\u041E\u041F\u0420\u0421\u0422\u0423\u0424\u0425\u0426\u0427\u0428\u0429\u042A\u042B\u042C\u042D\u042E\u042F\u0430\u0431\u0432\u0433\u0434\u0435\u0436\u0437\u0438\u0439\u043A\u043B\u043C\u043D\u043E\u043F\u0440\u0441\u0442\u0443\u0444\u0445\u0446\u0447\u0448\u0449\u044A\u044B\u044C\u044D\u044E\u044F";
         public static List<string[]> ReadCsv(string text)
         {
             text=text.TrimStart('﻿');int firstLine=text.IndexOf('\n');string header=firstLine<0?text:text.Substring(0,firstLine);

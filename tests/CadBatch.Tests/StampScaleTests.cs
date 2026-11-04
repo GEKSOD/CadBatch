@@ -93,7 +93,7 @@ internal static partial class Program
         });
         Run("Stamp settings persist in JSON profile and job",()=>
         {
-            string path=Path.Combine(Directory.GetCurrentDirectory(),"artifacts/verification/features/stamp-profile.json");var profile=new ProjectProfile{Search=Options()};profile.Search.Stamp!.ReferenceWidthMm=180;ProfileStore.Save(path,profile);
+            string path=Path.Combine(TestRoot,Path.Combine(TestRoot,"artifacts/verification/features/stamp-profile.json"));var profile=new ProjectProfile{Search=Options()};profile.Search.Stamp!.ReferenceWidthMm=180;ProfileStore.Save(path,profile);
             var loaded=ProfileStore.Load(path);Assert(loaded.Search.Stamp!.Enabled&&loaded.Search.Stamp.OnlyStamp&&loaded.Search.Stamp.ReferenceWidthMm==180);
             var frame=Find(Candidate("F",0,0,42000,29700),Stamp(42000,100)).Frames.Single();string jobPath=path+".job.json";
             JobStore.Save(jobPath,JobStore.Capture(new ProjectProfile{Search=Options()},new[]{frame}));var job=JobStore.Load(jobPath);
@@ -108,7 +108,7 @@ internal static partial class Program
         });
         Run("Legacy job without scale snapshot remains readable",()=>
         {
-            var candidate=Candidate("F",0,0,420,297);var frame=Detect(candidate).Frames.Single();string path="artifacts/verification/features/legacy-stamp-job.json";
+            var candidate=Candidate("F",0,0,420,297);var frame=Detect(candidate).Frames.Single();string path=Path.Combine(TestRoot,"artifacts/verification/features/legacy-stamp-job.json");
             JobStore.Save(path,JobStore.Capture(new ProjectProfile(),new[]{frame}));var node=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
             foreach(var row in node["Rows"]!.AsArray()){row!.AsObject().Remove("Scale");row.AsObject().Remove("StampParts");}File.WriteAllText(path,node.ToJsonString());
             var restored=JobStore.Restore(JobStore.Load(path),new[]{Detect(Candidate("F",0,0,420,297)).Frames.Single()},out var warnings);Assert(warnings.Count==0&&restored[0].Available);
@@ -126,7 +126,7 @@ internal static partial class Program
                 segments.AddRange(Stamp(420*scale,scale,"F"+i+"S").Select(s=>new StampSegment{DocumentKey="test",Path=s.Path,Start=s.Start+offset,End=s.End+offset}));
             }
             var clock=Stopwatch.StartNew();var result=FrameDetection.Detect(candidates,Options(),FormatDefinition.Defaults(),CancellationToken.None,segments);Assert(result.Frames.Count==200&&result.Frames.All(f=>f.StampEvidence!=null));
-            File.WriteAllText("artifacts/verification/stamp-performance.txt","200 mixed-scale frames: "+clock.Elapsed.TotalMilliseconds.ToString("F0",System.Globalization.CultureInfo.InvariantCulture)+" ms");
+            File.WriteAllText(Path.Combine(TestRoot,"artifacts/verification/stamp-performance.txt"),"200 mixed-scale frames: "+clock.Elapsed.TotalMilliseconds.ToString("F0",System.Globalization.CultureInfo.InvariantCulture)+" ms");
         });
     }
 }

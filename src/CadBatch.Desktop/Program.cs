@@ -35,7 +35,9 @@ namespace CadBatch.Desktop
             if(args.Length==2&&args[0]=="--bridge-smoke"){try{BridgeSmoke.RunAsync(args[1]).GetAwaiter().GetResult();}catch(Exception ex){File.WriteAllText(args[1]+".error.txt",ex.ToString());Environment.ExitCode=1;}return;}
             FormsStartup();
             var app=new System.Windows.Application {ShutdownMode=System.Windows.ShutdownMode.OnMainWindowClose};
-            app.DispatcherUnhandledException+=(s,e)=>{e.Handled=true;if(args.Length==2&&args[0].EndsWith("smoke",StringComparison.Ordinal)){File.AppendAllText(args[1]+".dispatcher.txt",e.Exception+Environment.NewLine);return;}ModernDialog.Message(IntPtr.Zero,"Что-то пошло не так",e.Exception.Message,DialogKind.Warning);};
+            AppDomain.CurrentDomain.UnhandledException+=(s,e)=>ErrorLog.Write("Сбой приложения",e.ExceptionObject as Exception??new Exception(Convert.ToString(e.ExceptionObject)));
+            TaskScheduler.UnobservedTaskException+=(s,e)=>{ErrorLog.Write("Фоновая задача",e.Exception);e.SetObserved();};
+            app.DispatcherUnhandledException+=(s,e)=>{e.Handled=true;ErrorLog.Write("Непредвиденная ошибка",e.Exception);if(args.Length==2&&args[0].EndsWith("smoke",StringComparison.Ordinal)){File.AppendAllText(args[1]+".dispatcher.txt",e.Exception+Environment.NewLine);return;}ModernDialog.Message(IntPtr.Zero,"Что-то пошло не так",e.Exception.Message,DialogKind.Warning);};
             if(args.Length==0){app.Run(new ConnectionWindow());return;}
             if(args.Length==2&&args[0]=="--lobby-smoke")
             {

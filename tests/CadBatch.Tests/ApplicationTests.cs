@@ -42,7 +42,7 @@ internal static partial class Program
         string Json(string url="",string hash="",bool draft=false)=>JsonSerializer.Serialize(new{tag_name="v0.5.0",draft,prerelease=false,body="Изменения",assets=new[]{new{name="CadBatch-Setup-0.5.0.exe",size=2048,browser_download_url=url.Length>0?url:"https://github.com/Geksod/CadBatch/releases/download/v0.5.0/CadBatch-Setup-0.5.0.exe",digest="sha256:"+(hash.Length>0?hash:new string('a',64))}}});
         Run("Updater accepts only a release asset from the pinned project",()=>{var r=UpdateClient.ParseRelease(Json());Assert(r.Version=="0.5.0"&&r.Size==2048);Throws<InvalidDataException>(()=>UpdateClient.ParseRelease(Json("https://github.com/other/project/releases/download/v0.5.0/CadBatch-Setup-0.5.0.exe")));Throws<InvalidDataException>(()=>UpdateClient.ParseRelease(Json("https://github.com.evil.example/Geksod/CadBatch/setup.exe")));});
         Run("Updater rejects drafts and missing valid SHA256 digests",()=>{Throws<InvalidDataException>(()=>UpdateClient.ParseRelease(Json(draft:true)));Throws<InvalidDataException>(()=>UpdateClient.ParseRelease(Json(hash:"bad")));});
-        string directory=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","updates-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
+        string directory=Path.Combine(TestRoot,"artifacts","verification","updates-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
         try
         {
             byte[] payload=Enumerable.Range(0,2048).Select(i=>(byte)(i%251)).ToArray();string hash=Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();

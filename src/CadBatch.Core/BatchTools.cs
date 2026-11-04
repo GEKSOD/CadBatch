@@ -17,7 +17,7 @@ namespace CadBatch.Core
     }
     public static class PdfGroupPlanner
     {
-        public static List<PdfGroup> Build(IReadOnlyList<OutputItem> items,PdfOutputMode mode,string folder,string name)
+        public static List<PdfGroup> Build(IReadOnlyList<OutputItem> items,PdfOutputMode mode,string folder,string name,bool overwrite=false)
         {
             if(items.Count==0)throw new ArgumentException("Нет страниц для объединения.");
             if(!Enum.IsDefined(typeof(PdfOutputMode),mode))throw new ArgumentException("Неизвестный режим PDF.");
@@ -34,7 +34,7 @@ namespace CadBatch.Core
                 if(string.IsNullOrWhiteSpace(key))key=mode==PdfOutputMode.ByCode?"Без шифра":"Комплект";
                 key=OutputPlanner.Sanitize(key);if(key.Length>120)key=key.Substring(0,120);
                 string path=Path.Combine(folder,key+".pdf");int suffix=2;
-                while(occupied.Contains(path)||File.Exists(path)||Directory.Exists(path))path=Path.Combine(folder,key+" ("+(suffix++)+").pdf");
+                while(occupied.Contains(path)||(!overwrite&&File.Exists(path))||Directory.Exists(path))path=Path.Combine(folder,key+" ("+(suffix++)+").pdf");
                 if(path.Length>240)throw new ArgumentException("Слишком длинный путь PDF.");
                 occupied.Add(path);output.Add(new PdfGroup{Path=path,Items=group.ToList()});
             }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -23,7 +23,7 @@ internal static partial class Program
             Assert(rows.Count==5&&rows[1][0]=="Шифр: АР"&&rows[2][0]=="  Формат: "+frames[0].FormatName&&rows[3][0]=="1"&&rows[4][0]=="2");
             Throws<ArgumentException>(()=>new RegisterOptions{GroupBy="А;Б;В;Г;Д"}.Rows(frames));
         });
-        string folder=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","ImportTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
+        string folder=Path.Combine(TestRoot,"artifacts","verification","ImportTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
         try
         {
             Run("Register XLSX round trip brings edited titles back by row number",()=>
@@ -41,6 +41,13 @@ internal static partial class Program
                 var rows=RegisterImport.ReadCsv("﻿\"Лист\";\"Наименование\"\r\n\"'=1\";\"План; узлы \"\"А\"\"\"\r\n\"2\";\"Разрез\r\nпродолжение\"\r\n");
                 var changes=RegisterImport.Plan(frames,rows,out _);
                 Assert(changes.Count==3&&changes.Any(c=>c.Field=="Лист"&&c.New=="=1")&&changes.Any(c=>c.New=="План; узлы \"А\"")&&changes.Any(c=>c.New=="Разрез\r\nпродолжение"||c.New=="Разрез\nпродолжение"));
+            });
+            Run("Register CSV in Windows-1251 keeps Cyrillic",()=>
+            {
+                var bytes=new List<byte>();foreach(char ch in "Лист;Наименование\r\n1;План первого этажа ёЁ №\r\n2;Разрез\r\n"){int code=ch;bytes.Add(code<0x80?(byte)code:code==0x401?(byte)0xA8:code==0x451?(byte)0xB8:code==0x2116?(byte)0xB9:(byte)(code-0x410+0xC0));}
+                string text=RegisterImport.ReadText(bytes.ToArray());Assert(text.Contains("План первого этажа ёЁ №")&&text.Contains("Разрез"));
+                Assert(RegisterImport.ReadText(Encoding.UTF8.GetBytes("Лист;План")).Contains("План")&&RegisterImport.ReadText(new byte[]{0xEF,0xBB,0xBF}.Concat(Encoding.UTF8.GetBytes("Ёлка")).ToArray())=="Ёлка");
+                var changes=RegisterImport.Plan(Pair(),RegisterImport.ReadCsv(text),out _);Assert(changes.Any(c=>c.New=="План первого этажа ёЁ №"));
             });
             Run("Register import by order refuses a different number of rows",()=>
             {

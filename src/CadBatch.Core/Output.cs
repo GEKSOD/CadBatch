@@ -47,7 +47,7 @@ namespace CadBatch.Core
     public static class OutputPlanner
     {
         private static readonly Regex Tokens = new Regex(@"\{([^{}]+)\}",RegexOptions.CultureInvariant);
-        public static List<OutputItem> Build(IEnumerable<DetectedFrame> frames,string folder,string pattern,string extension=".pdf")
+        public static List<OutputItem> Build(IEnumerable<DetectedFrame> frames,string folder,string pattern,string extension=".pdf",bool overwrite=false)
         {
             if (string.IsNullOrWhiteSpace(folder) || !System.IO.Path.IsPathRooted(folder)) throw new ArgumentException("Выберите абсолютный путь к папке PDF.");
             if (string.IsNullOrWhiteSpace(pattern)) throw new ArgumentException("Укажите шаблон имени файла.");
@@ -70,7 +70,7 @@ namespace CadBatch.Core
                 name = Sanitize(name);
                 if (name.Length > 140) name = name.Substring(0,140).TrimEnd(' ','.');
                 string candidate = System.IO.Path.Combine(folder,name+extension); int suffix = 2;
-                while (occupied.Contains(candidate) || File.Exists(candidate) || Directory.Exists(candidate))
+                while (occupied.Contains(candidate) || (!overwrite && File.Exists(candidate)) || Directory.Exists(candidate))
                     candidate = System.IO.Path.Combine(folder,name+" ("+(suffix++)+")"+extension);
                 if (candidate.Length > 240) throw new ArgumentException("Путь слишком длинный: выберите более короткую папку или имя.");
                 occupied.Add(candidate);

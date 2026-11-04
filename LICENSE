@@ -1,0 +1,39 @@
+CAD Batch — лицензионные условия
+Copyright © 2026 Geksod. Все права защищены.
+
+1. Программа CAD Batch, её исходный код, документация и сборки (далее — Программа)
+   являются собственностью правообладателя. Исходный код опубликован только для
+   ознакомления и не является открытым (open source).
+
+2. Без письменного разрешения правообладателя запрещается копировать, изменять,
+   переводить, распространять, сублицензировать, продавать Программу или её части,
+   а также создавать на её основе производные продукты.
+
+3. Официальные сборки из раздела Releases репозитория github.com/Geksod/CadBatch
+   разрешается устанавливать и использовать бесплатно до выхода платных версий.
+   Условия использования будущих версий определяются отдельным лицензионным
+   соглашением.
+
+4. Программа предоставляется «как есть». Правообладатель не несёт ответственности
+   за ущерб, возникший в результате использования Программы, в том числе за
+   результаты печати и выпуска документации. Перед выпуском документов проверяйте
+   полученные PDF.
+
+5. Сторонние компоненты, входящие в состав Программы, распространяются на условиях
+   их собственных лицензий: см. packaging/THIRD-PARTY-NOTICES.txt.
+
+По вопросам лицензирования и коммерческого использования обращайтесь через
+github.com/Geksod/CadBatch.
+
+---
+
+CAD Batch — license terms
+Copyright © 2026 Geksod. All rights reserved.
+
+The source code is published for reference only and is not open source. No part of
+the software may be copied, modified, distributed, sublicensed or sold without the
+written permission of the copyright holder. Official builds from the Releases page may
+be installed and used free of charge until paid versions are released; future versions
+are governed by a separate license agreement. The software is provided "as is",
+without warranty of any kind. Third-party components are licensed under their own
+terms (packaging/THIRD-PARTY-NOTICES.txt).

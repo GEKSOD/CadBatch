@@ -46,7 +46,7 @@ namespace CadBatch.AutoCAD
                     }
                     cancellation.ThrowIfCancellationRequested();string combined=Path.Combine(scratch,"combined.pdf");
                     await Task.Run(()=>TargetSheetPdf.Merge(pages,combined,titles,Path.GetFileNameWithoutExtension(group.Path)));cancellation.ThrowIfCancellationRequested();
-                    File.Move(combined,group.Path);report.Files.Add(group.Path);request.OutputCompleted?.Invoke(group.Path);foreach(var item in group.Items)item.Frame.Status="В PDF: "+Path.GetFileName(group.Path);
+                    OutputFiles.MoveReplacing(combined,group.Path);report.Files.Add(group.Path);request.OutputCompleted?.Invoke(group.Path);foreach(var item in group.Items)item.Frame.Status="В PDF: "+Path.GetFileName(group.Path);
                 }
                 catch(OperationCanceledException){report.Cancelled=true;foreach(var item in group.Items)item.Frame.Status="Комплект отменён — PDF не сохранён";break;}
                 catch(Exception ex){report.Errors.Add(Path.GetFileName(group.Path)+": "+ex.Message);report.Details.Add(ex.ToString());foreach(var item in group.Items)item.Frame.Status="Комплект не сохранён: ошибка";break;}

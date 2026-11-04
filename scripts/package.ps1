@@ -30,9 +30,16 @@ foreach($pair in @(@('net48','2023-2024'),@('net8.0-windows','2025-2026'),@('net
  if(Test-Path -LiteralPath $deps){Copy-Item -LiteralPath $deps -Destination $target -Force}
  if(Test-Path -LiteralPath (Join-Path $source 'runtimes')){Copy-Item -LiteralPath (Join-Path $source 'runtimes') -Destination $target -Recurse -Force}
 }
-Copy-Item -LiteralPath 'packaging\PackageContents.xml' -Destination $bundle -Force
+# Single source of the version: Directory.Build.props. The manifest template carries 0.0.0.
+$manifest=(Get-Content -LiteralPath 'packaging\PackageContents.xml' -Raw -Encoding UTF8) -replace 'AppVersion="[0-9.]+"',('AppVersion="'+$version+'"') -replace '(<ComponentEntry AppName="CadBatch" )Version="[0-9.]+"',('$1Version="'+$version+'"')
+[System.IO.File]::WriteAllText((Join-Path $bundle 'PackageContents.xml'),$manifest,(New-Object System.Text.UTF8Encoding($true)))
 Get-ChildItem -LiteralPath $app -Force | ForEach-Object {Copy-Item -LiteralPath $_.FullName -Destination $desktop -Recurse -Force}
-foreach($name in @('Start.html','Start.txt','Start.md','Architecture.md','Testing.md',('Release-'+$version+'.md'))){Copy-Item -LiteralPath (Join-Path 'docs' $name) -Destination $docs -Force}
+# The guide has one source (docs/Start.md); HTML and TXT are built here.
+$guide=Join-Path $projectRoot ('artifacts\guide-'+$version)
+python 'scripts\make-docs.py' $version $guide
+if($LASTEXITCODE -ne 0){throw 'Guide build failed'}
+foreach($name in @('Start.html','Start.txt','Start.md')){Copy-Item -LiteralPath (Join-Path $guide $name) -Destination $docs -Force}
+foreach($name in @('Architecture.md','Testing.md',('Release-'+$version+'.md'))){Copy-Item -LiteralPath (Join-Path 'docs' $name) -Destination $docs -Force}
 Copy-Item -LiteralPath 'packaging\THIRD-PARTY-NOTICES.txt' -Destination $docs -Force
 $licenses=Join-Path $docs 'runtime-licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
@@ -41,7 +48,8 @@ foreach($item in @(@('microsoft.netcore.app.runtime.win-x64','LICENSE.TXT','NETC
  Copy-Item -LiteralPath $license -Destination (Join-Path $licenses $item[2]) -Force
 }
 Copy-Item -LiteralPath 'samples' -Destination $docs -Recurse -Force
-Copy-Item -LiteralPath 'docs\Start.html' -Destination (Join-Path $release 'Start.html') -Force
+Copy-Item -LiteralPath (Join-Path $guide 'Start.html') -Destination (Join-Path $release 'Start.html') -Force
+Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $release 'LICENSE.txt') -Force
 Copy-Item -LiteralPath 'packaging\THIRD-PARTY-NOTICES.txt' -Destination $release -Force
 @{id='CadBatch.Desktop';version=$version;runtime=$RuntimeVersion;architecture='win-x64'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $release 'product.json') -Encoding utf8
 $payload=Join-Path $projectRoot ('artifacts\packaging-'+$version)

@@ -72,7 +72,7 @@ namespace CadBatch.UI
                         writes.Send("result",result);
                     }
                     catch(OperationCanceledException){writes.Send("cancelled","null");}
-                    catch(Exception ex){writes.Send("error",WireJson.Write(ex.Message));}
+                    catch(Exception ex){ErrorLog.Write("Компонент AutoCAD",ex);writes.Send("error",WireJson.Write(ex.Message));}
                     finally{try{await writes.Completion.ConfigureAwait(false);}catch(IOException){}readStop.Cancel();try{await monitor.ConfigureAwait(false);}catch{} }
                 }
             }

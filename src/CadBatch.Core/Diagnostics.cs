@@ -8,7 +8,8 @@ namespace CadBatch.Core
 {
     public static class ProductInfo
     {
-        public const string Version="0.7.0";
+        // Taken from the assembly, which gets it from Directory.Build.props: the only place to change the version.
+        public static readonly string Version=typeof(ProductInfo).Assembly.GetName().Version!.ToString(3);
     }
 
     public sealed class OperationTrace

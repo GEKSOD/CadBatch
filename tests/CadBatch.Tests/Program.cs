@@ -9,6 +9,17 @@ using CadBatch.Pdf;
 internal static partial class Program
 {
     private static int passed,failed;
+    // Output goes under the repository (found from the test binary), never under the current directory,
+    // and the folders exist before any test writes into them.
+    private static readonly string TestRoot=CreateTestRoot();
+    private static string CreateTestRoot()
+    {
+        string? root=Environment.GetEnvironmentVariable("CADBATCH_TEST_ROOT");
+        for(var dir=new DirectoryInfo(AppContext.BaseDirectory);root==null&&dir!=null;dir=dir.Parent)if(File.Exists(Path.Combine(dir.FullName,"CadBatch.sln")))root=dir.FullName;
+        root??=Path.Combine(Path.GetTempPath(),"CadBatch-tests");
+        foreach(string sub in new[]{"artifacts/verification/features","artifacts/tests"})Directory.CreateDirectory(Path.Combine(root,sub));
+        return root;
+    }
     private static void Main()
     {
         Run("Axis-aligned rectangle",()=>{Assert(Rectangle2.TryCreate(Box(0,0,420,297),.01,out var r));Equal(r!.Width*r.Height,420*297,.01);});
@@ -141,7 +152,7 @@ internal static partial class Program
         });
         Run("Mixed paper-layout formats yield all ten frames",()=>
         {
-            var fixture=System.Text.Json.JsonDocument.Parse(File.ReadAllText("tests/fixtures/synthetic-layout.json"));
+            var fixture=System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(TestRoot,"tests/fixtures/synthetic-layout.json")));
             var candidates=fixture.RootElement.EnumerateArray().Select(row=>new FrameCandidate
             {
                 DocumentKey="synthetic-fixture",DocumentName="Regression.dwg",Layout="Sheets",Layer="CAD_FRAME",HandlePath=row.GetProperty("handle").GetString()!,
@@ -151,7 +162,7 @@ internal static partial class Program
             Assert(found.Count==10);Assert(found.Count(f=>f.FormatName=="А3×4")==2);Assert(found.Count(f=>f.FormatName=="А3×3")==2);
             Assert(found.Count(f=>f.FormatName=="А3")==5);Assert(found.Count(f=>f.FormatName=="А4×3")==1);
         });
-        string temp=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","tests","cadbatch-tests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(temp);
+        string temp=Path.Combine(TestRoot,"artifacts","tests","cadbatch-tests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(temp);
         try
         {
             Run("Planning reserves names case-insensitively",()=>
@@ -193,13 +204,13 @@ internal static partial class Program
                     Assert(document.PageCount==1);Equal(document.Pages[0].MediaBox.Width*25.4/72,891,.001);Equal(document.Pages[0].MediaBox.Height*25.4/72,420,.001);
                     Assert(document.Pages[0].Contents.Elements.Count>0);
                 }
-                string qa=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","carrier-vector-test.pdf");File.Copy(output,qa,true);
+                string qa=Path.Combine(TestRoot,"artifacts","verification","carrier-vector-test.pdf");File.Copy(output,qa,true);
             });
             Run("Native AutoCAD PDF fonts survive page-box crop",()=>
             {
-                string source="artifacts/feedback/20261102-batch/CadBatch-control.dwg_006_А2.pdf";
+                string source=Path.Combine(TestRoot,"artifacts/feedback/20261102-batch/CadBatch-control.dwg_006_А2.pdf");
                 if(!File.Exists(source))return;
-                string output=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","native-crop-test.pdf");
+                string output=Path.Combine(TestRoot,"artifacts","verification","native-crop-test.pdf");
                 TargetSheetPdf.CropCentered(source,output,594,420);
                 using(var doc=PdfSharp.Pdf.IO.PdfReader.Open(output,PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
                 {Assert(doc.PageCount==1);Equal(doc.Pages[0].MediaBox.Width*25.4/72,420,.001);Equal(doc.Pages[0].MediaBox.Height*25.4/72,594,.001);}
@@ -211,6 +222,7 @@ internal static partial class Program
         RunModernFeatureTests();
         RunApplicationTests();
         RunImportTests();
+        RunReleaseToolsTests();
         Run("500-frame synthetic corpus",()=>
         {
             var candidates=Enumerable.Range(0,500).Select(i=>Candidate(i.ToString(),i%25*500,i/25*400,420,297)).ToList();

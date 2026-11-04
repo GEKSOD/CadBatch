@@ -139,7 +139,7 @@ namespace CadBatch.UI
             running=new CancellationTokenSource();search.Enabled=false;pdf.Enabled=singlePdf.Enabled=show.Enabled=false;cancel.Enabled=true;toolsMenu.Enabled=false;grid.Enabled=false;findBox.Enabled=outputBox.Enabled=false;workspaceToolbar.Enabled=false;
             try { await action(); }
             catch(OperationCanceledException) { status.Text="Операция отменена."; }
-            catch(Exception ex) { diagnostics.Add(ex.ToString());status.Text=ex.Message;if(ErrorPresenter?.Invoke(ex)!=true)Notify(ex.Message,ex is ArgumentException?"Проверьте настройки":"Не получилось"); }
+            catch(Exception ex) { diagnostics.Add(ex.ToString());ErrorLog.Write("Операция",ex);status.Text=ex.Message;if(ErrorPresenter?.Invoke(ex)!=true)Notify(ex.Message,ex is ArgumentException?"Проверьте настройки":"Не получилось"); }
             finally { running.Dispose();running=null;search.Enabled=show.Enabled=true;pdf.Enabled=singlePdf.Enabled=host.CanPlot;cancel.Enabled=false;progress.Value=0;toolsMenu.Enabled=true;grid.Enabled=true;findBox.Enabled=outputBox.Enabled=true;workspaceToolbar.Enabled=true;RefreshSelection();pdf.Enabled=singlePdf.Enabled=host.CanPlot; }
         }
         public Task SearchForSmokeTestAsync()=>RunAsync(ScanAsync);
@@ -178,11 +178,11 @@ namespace CadBatch.UI
             try
             {
                 if(selectedOnly)CurrentFrame().Enabled=true;
-                items=OutputPlanner.Build(selected,profile.OutputFolder,profile.FilePattern);
+                items=OutputPlanner.Build(selected,profile.OutputFolder,profile.FilePattern,".pdf",profile.OverwriteExisting==true);
             }
             finally {if(selectedOnly)CurrentFrame().Enabled=wasEnabled;}
             var mode=selectedOnly?PdfOutputMode.Separate:profile.PdfMode;
-            var groups=PdfGroupPlanner.Build(items,mode,profile.OutputFolder,profile.CombinedPdfName??"Комплект");
+            var groups=PdfGroupPlanner.Build(items,mode,profile.OutputFolder,profile.CombinedPdfName??"Комплект",profile.OverwriteExisting==true);LastBatch=items.Select(i=>i.Frame).ToList();
             var baseSettings=new ExportRequest{Device=profile.Device,StyleSheet=profile.StyleSheet,FitToPaper=fit.Checked,ColorMode=profile.ColorMode};
             var printPlan=items.Select(i=>new{Frame=i.Frame,Settings=PrintTemplates.Resolve(baseSettings,i.Frame)}).ToList();
             foreach(var entry in printPlan)if(entry.Settings.Device.IndexOf("pdf",StringComparison.OrdinalIgnoreCase)<0||!entry.Settings.Device.EndsWith(".pc3",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Формат "+entry.Frame.FormatName+": для PDF задано устройство «"+entry.Settings.Device+"». Выберите PDF PC3 в шаблоне или настройке строки.");
@@ -190,17 +190,17 @@ namespace CadBatch.UI
             message+="\n\nНастройки по форматам:\n"+string.Join("\n",printPlan.Select(e=>e.Frame.FormatName+": "+e.Settings.Device+"; "+(e.Settings.Media.Length==0?"бумага по рамке":e.Settings.Media)+"; "+PrintStylePolicy.Describe(e.Settings.ColorMode)).Distinct().Take(10));
             var overrides=items.Where(i=>!string.IsNullOrWhiteSpace(i.Frame.Device)||!string.IsNullOrWhiteSpace(i.Frame.StyleSheet)).ToList();
             if(overrides.Count>0)message+="\n\nСобственные настройки строк: "+overrides.Count+"\n"+string.Join("\n",overrides.Take(10).Select(i=>i.Frame.Page+": "+i.Frame.Device+" / "+i.Frame.StyleSheet));
-            message+=(profile.RepeatCopiesInPdf==true?"\n\nЛисты с копиями повторяются в PDF нужное число раз.":"\n\nКопии для PDF не учитываются (включается в «Плоттер и шаблоны»).")+" Существующие файлы не перезаписываются: новым файлам добавляется номер.";
+            message+=(profile.RepeatCopiesInPdf==true?"\n\nЛисты с копиями повторяются в PDF нужное число раз.":"\n\nКопии для PDF не учитываются (включается в «Плоттер и шаблоны»).")+""+(profile.OverwriteExisting==true?" Файлы с теми же именами будут заменены.":" Существующие файлы не перезаписываются: новым файлам добавляется номер.")+(profile.Iul?.Enabled==true?" Для каждого PDF будет создан ИУЛ.":"");
             var facts=new[]{("PDF-файлов",groups.Count.ToString()),("Страниц",items.Count.ToString()),("Папка",profile.OutputFolder),("Плоттер",profile.Device),("Цвет",color.Text)};
             if(!ModernDialog.Plan(DialogHandle,selectedOnly?"PDF выбранного листа":"Вывод PDF","Проверьте план. Вывод можно отменить в любой момент, готовые файлы сохранятся.",facts,message,groups.Count==1?"Создать PDF":"Создать "+groups.Count+" PDF"))return;
             var request=new ExportRequest { Items=items,Device=profile.Device,StyleSheet=profile.StyleSheet,FitToPaper=fit.Checked,ColorMode=profile.ColorMode,PdfMode=mode,Groups=groups };
             var checkpoint=CheckpointStore.Create(profile,frames.ToList(),groups,mode);
             string checkpointPath=Path.Combine(profile.OutputFolder,".CadBatch-jobs","Вывод-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".cadbatchjob.json");CheckpointStore.Save(checkpointPath,checkpoint);
-            request.OutputCompleted=path=>{RepeatCopies(path,groups);CheckpointStore.Complete(checkpoint,path);CheckpointStore.Save(checkpointPath,checkpoint);};
+            request.OutputCompleted=path=>{RepeatCopies(path,groups);WriteIul(path,groups);CheckpointStore.Complete(checkpoint,path);CheckpointStore.Save(checkpointPath,checkpoint);};
             var report=await host.ExportAsync(request,new Progress<BatchProgress>(p=>
             { progress.Maximum=Math.Max(1,p.Total);progress.Value=Math.Min(p.Done,progress.Maximum);status.Text=p.Text;frames.ResetBindings(); }),running!.Token);
             diagnostics.Add("Журнал для возобновления: "+checkpointPath);
-            diagnostics.AddRange(report.Errors);diagnostics.AddRange(report.Details);frames.ResetBindings();
+            diagnostics.AddRange(report.Errors);diagnostics.AddRange(report.Details);frames.ResetBindings();foreach(string error in report.Errors)ErrorLog.Write("Вывод PDF",error);
             Directory.CreateDirectory(profile.OutputFolder);
             string reportPath=Path.Combine(profile.OutputFolder,"CadBatch-report-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".txt");
             File.WriteAllText(reportPath,ExportReportText.Format(report,request,host.Description),Encoding.UTF8);
@@ -216,6 +216,36 @@ namespace CadBatch.UI
             if(group==null||group.Items.All(i=>i.Frame.Copies<=1))return;
             try{CadBatch.Pdf.TargetSheetPdf.RepeatPages(path,group.Items.Select(i=>Math.Max(1,i.Frame.Copies)).ToList(),group.Items.Count>1?group.Items.Select(i=>i.Frame.Title).ToList():null);}
             catch(Exception ex){diagnostics.Add("Копии не добавлены в "+Path.GetFileName(path)+": "+ex.Message);}
+        }
+        // Frames of the last batch: "repeat unfinished" picks those without a finished PDF.
+        public List<DetectedFrame> LastBatch {get;private set;}=new List<DetectedFrame>();
+        public static bool Finished(DetectedFrame frame)=>frame.Status.StartsWith("PDF создан",StringComparison.Ordinal)||frame.Status.StartsWith("В PDF",StringComparison.Ordinal);
+        // ИУЛ is written from the final PDF (after copies), so its checksum matches the issued file.
+        private void WriteIul(string path,List<PdfGroup> groups)
+        {
+            if(profile.Iul?.Enabled!=true)return;var group=groups.FirstOrDefault(g=>string.Equals(Path.GetFullPath(g.Path),Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase));
+            var first=group?.Items.FirstOrDefault()?.Frame;string title=group==null||group.Items.Count!=1?Path.GetFileNameWithoutExtension(path):first?.Title??"";
+            try{CadBatch.Pdf.TargetSheetPdf.WriteIul(IulSheet.Describe(path,first?.Code??"",title,first?.Revision??"",profile.Iul),IulSheet.PathFor(path));}
+            catch(Exception ex){diagnostics.Add("ИУЛ не создан для "+Path.GetFileName(path)+": "+ex.Message);ErrorLog.Write("ИУЛ",ex);}
+        }
+        // ИУЛ for files already issued (PDF, DWG or any other document), without AutoCAD.
+        private void IulForFiles()
+        {
+            using(var dialog=new OpenFileDialog{Title="Файлы, для которых нужен ИУЛ",Filter="Документы|*.pdf;*.dwg;*.docx;*.xlsx|Все файлы|*.*",Multiselect=true})
+            {
+                if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;string designation="",title="",revision="";
+                if(dialog.FileNames.Length==1){var values=AskValues("Данные для ИУЛ",("Обозначение документа (шифр)",Path.GetFileNameWithoutExtension(dialog.FileName)),("Наименование документа",Path.GetFileNameWithoutExtension(dialog.FileName)),("Номер последнего изменения","—"));if(values==null)return;designation=values[0];title=values[1];revision=values[2];}
+                var made=new List<string>();
+                foreach(string file in dialog.FileNames){string target=IulSheet.PathFor(file);CadBatch.Pdf.TargetSheetPdf.WriteIul(IulSheet.Describe(file,designation,title,revision,profile.Iul),target);made.Add(target);}
+                status.Text="Готово · ИУЛ создано: "+made.Count;LastOutputFolder=Path.GetDirectoryName(made[0]);
+                ShowText("ИУЛ созданы",string.Join(Environment.NewLine,made)+Environment.NewLine+Environment.NewLine+"Контрольная сумма — CRC32. Проверьте форму по требованиям вашей экспертизы.");
+            }
+        }
+        private void EditIulSigners()
+        {
+            var current=profile.Iul?.Copy()??new IulSettings();
+            var values=AskValues("Подписи в ИУЛ",("Разработал",current.Developer),("Проверил",current.Checker),("Н. контроль",current.NormControl),("ГИП",current.Chief));if(values==null)return;
+            current.Developer=values[0].Trim();current.Checker=values[1].Trim();current.NormControl=values[2].Trim();current.Chief=values[3].Trim();profile.Iul=current;
         }
         private void ChooseFolder()
         {
@@ -252,11 +282,19 @@ namespace CadBatch.UI
         private void ShowDiagnostics()
         {
             string text=diagnostics.Count==0?"Замечаний нет. Здесь появятся предупреждения поиска и подробности вывода.":string.Join(Environment.NewLine+Environment.NewLine,diagnostics);
-            ModernDialog.Text(DialogHandle,"Диагностика",text,null,("Сохранить в TXT…",owner=>
+            ModernDialog.Text(DialogHandle,"Диагностика",text,null,("Собрать диагностику (ZIP)…",owner=>CollectDiagnostics()));
+        }
+        // Everything support needs in one file the user can attach to a message: versions, this session, recent journals, settings.
+        private void CollectDiagnostics()
+        {
+            using(var dialog=new SaveFileDialog{Filter="Архив ZIP|*.zip",FileName="CadBatch-диагностика-"+DateTime.Now.ToString("yyyyMMdd-HHmm",CultureInfo.InvariantCulture)+".zip",InitialDirectory=Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)})
             {
-                using(var file=new SaveFileDialog {Filter="Текстовый отчёт|*.txt",FileName="CadBatch-diagnostics.txt"})
-                    if(file.ShowDialog(DialogOwner)==DialogResult.OK)File.WriteAllText(file.FileName,host.Description+Environment.NewLine+text,Encoding.UTF8);
-            }));
+                if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;
+                string folder=Path.GetDirectoryName(profilePath)!;
+                ErrorLog.Collect(dialog.FileName,ErrorLog.Summary(host.Description),string.Join(Environment.NewLine+Environment.NewLine,diagnostics),new[]{profilePath,Path.Combine(folder,"interface.json"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","preferences.json")});
+                try{Process.Start(new ProcessStartInfo("explorer.exe","/select,\""+dialog.FileName+"\""){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){}
+                Notify("Файл сохранён:\n"+dialog.FileName+"\n\nОтправьте его разработчику. Чертежей в нём нет; в настройках есть названия папок.","Диагностика собрана",DialogKind.Success);
+            }
         }
         private void UpdateCount() { RefreshWorkspaceCount();if(running==null)status.Text=$"Рамок: {frames.Count} • отмечено: {frames.Count(f=>f.Enabled)}"; }
     }

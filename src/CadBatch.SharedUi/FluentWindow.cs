@@ -137,7 +137,7 @@ namespace CadBatch.UI
                 menus.Background=Brushes.Transparent;menus.FontSize=14.5;menus.VerticalAlignment=VerticalAlignment.Center;
                 foreach(var item in c.toolsMenu.Items.OfType<Forms.ToolStripMenuItem>()){var converted=ConvertMenu(item);toolMenus.Add(converted);menus.Items.Add(converted);}
                 var helpMenu=new MenuItem{Header="Справка",Foreground=UiTheme.Ink};
-                helpMenu.Items.Add(Command("Знакомство с программой",ShowIntro));helpMenu.Items.Add(Command("Подробная инструкция",ShowGuide));helpMenu.Items.Add(Command("Горячие клавиши",ShowShortcuts));helpMenu.Items.Add(new System.Windows.Controls.Separator());helpMenu.Items.Add(Command("Диагностика",()=>c.ShowDiagnostics()));
+                helpMenu.Items.Add(Command("Знакомство с программой",ShowIntro));helpMenu.Items.Add(Command("Подробная инструкция",ShowGuide));helpMenu.Items.Add(Command("Горячие клавиши",ShowShortcuts));helpMenu.Items.Add(new System.Windows.Controls.Separator());helpMenu.Items.Add(Command("Диагностика",()=>c.ShowDiagnostics()));helpMenu.Items.Add(Command("Собрать диагностику (ZIP)…",()=>Guard(()=>c.CollectDiagnostics())));
                 menus.Items.Add(helpMenu);top.Children.Add(menus);
                 return bar;
             }
@@ -198,7 +198,7 @@ namespace CadBatch.UI
                 Col("Чертёж","File",190,true,false);Col("Слой","Layer",110,true,false);Col("Шифр","Code",140,false,false);Col("Ревизия","Revision",95,false,false);Col("Источник","Kind",150,true,false);Col("Состояние","Status",230,true,false);Col("Копии","Copies",75,false,false);Col("Устройство","Device",170,false,false);Col("CTB / STB","StyleSheet",160,false,false);Col("Масштаб из","ScaleSource",170,true,false);
                 view=new ListCollectionView((System.Collections.IList)c.frames);table.ItemsSource=view;
                 // Property edits update rows by themselves; only list changes (search, order) rebuild the view.
-                c.frames.ListChanged+=(s,e)=>{if(e.ListChangedType==System.ComponentModel.ListChangedType.ItemChanged)return;if(view is System.ComponentModel.IEditableCollectionView editing&&!editing.IsEditingItem&&!editing.IsAddingNew)view.Refresh();};
+                c.frames.ListChanged+=(s,e)=>{numbersDirty=true;if(e.ListChangedType==System.ComponentModel.ListChangedType.ItemChanged)return;if(view is System.ComponentModel.IEditableCollectionView editing&&!editing.IsEditingItem&&!editing.IsAddingNew)view.Refresh();};
                 table.SelectionChanged+=(s,e)=>{c.fluentSelection=table.SelectedItem as DetectedFrame;foreach(Forms.DataGridViewRow r in c.grid.Rows)r.Selected=table.SelectedItems.Contains(r.DataBoundItem);RenderSelection();};
                 table.MouseDoubleClick+=async(s,e)=>{if(table.CurrentColumn?.IsReadOnly==true&&table.SelectedItem!=null&&IsRow(e.OriginalSource))await LocateInCadAsync();};table.CellEditEnding+=(s,e)=>Dispatcher.BeginInvoke(new Action(()=>c.UpdateCount()));
                 table.PreviewKeyDown+=(s,e)=>{if(e.Key==Key.Space&&!IsEditing()&&table.SelectedItems.Count>0){var rows=table.SelectedItems.OfType<DetectedFrame>().ToList();bool value=rows.Any(f=>!f.Enabled);if(rows.Count>1)RememberMarks(rows,(value?"Отмечено":"Снято отметок")+": "+rows.Count);foreach(var f in rows)f.Enabled=value;c.UpdateCount();e.Handled=true;}};
@@ -242,7 +242,7 @@ namespace CadBatch.UI
                 var folderInput=Input(c.folder);folderInput.Tag="Папка не выбрана";browse.Children.Add(folderInput);settings.Children.Add(Field("Папка для PDF",browse,out var folderCaption));
                 var folderNote=UiTheme.Hint("",new Thickness(2,-6,0,8));settings.Children.Add(folderNote);
                 var openFolder=UiTheme.Button("Открыть папку",UiTheme.IconOpen,"Plain");openFolder.HorizontalAlignment=HorizontalAlignment.Left;openFolder.Margin=new Thickness(-10,-8,0,6);openFolder.FontWeight=FontWeights.Normal;openFolder.Click+=(s,e)=>OpenFolder(c.folder.Text);settings.Children.Add(openFolder);
-                refresh.Add(()=>{string f=c.folder.Text.Trim();bool exists=f.Length>0&&Path.IsPathRooted(f)&&Directory.Exists(f);var v=exists?Visibility.Visible:Visibility.Collapsed;if(openFolder.Visibility!=v)openFolder.Visibility=v;
+                refresh.Add(()=>{string f=c.folder.Text.Trim();bool exists=FolderExists(f);var v=exists?Visibility.Visible:Visibility.Collapsed;if(openFolder.Visibility!=v)openFolder.Visibility=v;
                     bool missing=f.Length==0&&c.frames.Any(x=>x.Enabled);folderCaption.Foreground=missing?UiTheme.Warning:UiTheme.Secondary;folderNote.Text=missing?"Выберите папку — или её предложат выбрать при выводе.":"";folderNote.Visibility=missing?Visibility.Visible:Visibility.Collapsed;});
                 nameInput=Input(c.pattern);var nameField=Field("Имя файла",nameInput,out var nameCaption);settings.Children.Add(nameField);
                 var tokenHint=UiTheme.Hint("Добавить в имя:",new Thickness(2,-6,0,6));settings.Children.Add(tokenHint);
@@ -252,6 +252,10 @@ namespace CadBatch.UI
                 var colors=new ComboBox{ItemsSource=c.color.Items.Cast<string>().ToArray(),SelectedIndex=c.color.SelectedIndex};colors.SelectionChanged+=(s,e)=>{if(colors.SelectedIndex>=0)c.color.SelectedIndex=colors.SelectedIndex;};refresh.Add(()=>{if(colors.SelectedIndex!=c.color.SelectedIndex)colors.SelectedIndex=c.color.SelectedIndex;});settings.Children.Add(Field("Цвет",colors));
                 var styleField=Field("Таблица стилей CTB / STB",Input(c.style));settings.Children.Add(styleField);refresh.Add(()=>{var v=c.style.Enabled?Visibility.Visible:Visibility.Collapsed;if(styleField.Visibility!=v)styleField.Visibility=v;});
                 var fitRow=ToggleRow("Вписать в лист бумаги",c.fit,"Выключите, чтобы печатать точно 1:1");((FrameworkElement)fitRow).Margin=new Thickness(0,0,0,12);settings.Children.Add(fitRow);
+                var overwrite=Option("Заменять файлы с тем же именем","При перевыпуске старый PDF заменяется, а не появляется копия «(2)».",()=>c.profile.OverwriteExisting==true,on=>c.profile.OverwriteExisting=on?true:(bool?)null);settings.Children.Add(overwrite);
+                var iul=Option("Создавать ИУЛ для экспертизы","Информационно-удостоверяющий лист по ГОСТ Р 21.101-2020 с контрольной суммой — рядом с каждым PDF.",()=>c.profile.Iul?.Enabled==true,on=>{var value=c.profile.Iul?.Copy()??new IulSettings();value.Enabled=on;c.profile.Iul=value;});settings.Children.Add(iul);
+                var signers=UiTheme.Button("Подписи в ИУЛ…",null,"Plain");signers.HorizontalAlignment=HorizontalAlignment.Left;signers.Margin=new Thickness(24,-10,0,8);signers.FontWeight=FontWeights.Normal;signers.Click+=(s,e)=>Guard(()=>c.EditIulSigners());settings.Children.Add(signers);
+                refresh.Add(()=>{var v=c.profile.Iul?.Enabled==true?Visibility.Visible:Visibility.Collapsed;if(signers.Visibility!=v)signers.Visibility=v;});
                 var plotter=new StackPanel();plotter.Children.Add(Field("Плоттер PDF (PC3)",Input(c.device)));
                 var templates=UiTheme.Button("Настройки по форматам…",UiTheme.IconSettings,"Outline");templates.HorizontalAlignment=HorizontalAlignment.Stretch;templates.Click+=(s,e)=>Guard(()=>{c.EditProfile();table.Items.Refresh();});plotter.Children.Add(templates);
                 plotter.Children.Add(UiTheme.Hint("Своё устройство, бумага, стиль и поворот для каждого формата.",new Thickness(0,8,0,12)));
@@ -268,7 +272,8 @@ namespace CadBatch.UI
                 var left=new StackPanel{VerticalAlignment=VerticalAlignment.Center};var line=new DockPanel();statusIcon.Margin=new Thickness(0,0,10,0);statusIcon.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(statusIcon);
                 stop.Margin=new Thickness(12,0,0,0);stop.Click+=(s,e)=>c.running?.Cancel();DockPanel.SetDock(stop,WDock.Right);openResult.Margin=new Thickness(8,0,0,0);openResult.Click+=(s,e)=>OpenFolder(c.LastOutputFolder??c.folder.Text);DockPanel.SetDock(openResult,WDock.Right);
                 undo.Margin=new Thickness(12,0,0,0);undo.Visibility=Visibility.Collapsed;undo.Click+=(s,e)=>RestoreMarks();DockPanel.SetDock(undo,WDock.Right);
-                line.Children.Add(stop);line.Children.Add(openResult);line.Children.Add(undo);
+                retry.Margin=new Thickness(12,0,0,0);retry.Visibility=Visibility.Collapsed;retry.Click+=async(s,e)=>await RetryUnfinishedAsync();DockPanel.SetDock(retry,WDock.Right);
+                line.Children.Add(stop);line.Children.Add(openResult);line.Children.Add(undo);line.Children.Add(retry);
                 state.TextTrimming=TextTrimming.CharacterEllipsis;state.Foreground=UiTheme.Ink;state.FontSize=15;state.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(state);left.Children.Add(line);
                 activity.Margin=new Thickness(0,10,0,0);activity.Height=8;activity.MaxWidth=620;activity.HorizontalAlignment=HorizontalAlignment.Stretch;left.Children.Add(activity);
                 progressText.FontSize=14;progressText.Foreground=UiTheme.Secondary;progressText.Margin=new Thickness(0,6,0,0);progressText.Visibility=Visibility.Collapsed;left.Children.Add(progressText);grid.Children.Add(left);
@@ -358,6 +363,7 @@ namespace CadBatch.UI
                 menu.Items.Add(new System.Windows.Controls.Separator());
                 menu.Items.Add(Command("Сохранить ведомость в Excel…",()=>Guard(()=>c.SaveRegisterXlsx())));
                 menu.Items.Add(Command("Загрузить названия и номера из ведомости…",()=>Guard(()=>c.ImportRegister())));
+                menu.Items.Add(Command("ИУЛ для готовых файлов…",()=>Guard(()=>c.IulForFiles())));
                 menu.Items.Add(Command("Сохранить список листов в CSV…",()=>Guard(()=>c.SaveCsv())));
                 if(prefs.Advanced){menu.Items.Add(Command("Столбцы таблицы…",()=>Guard(ChooseColumns)));menu.Items.Add(new System.Windows.Controls.Separator());menu.Items.Add(Command("Настройки печати по форматам…",()=>Guard(()=>{c.EditProfile();table.Items.Refresh();})));}
                 if(Math.Abs(prefs.TextScale-1)>0.001)menu.LayoutTransform=new ScaleTransform(prefs.TextScale,prefs.TextScale);
@@ -503,6 +509,20 @@ namespace CadBatch.UI
                 tablePane.Visibility=!compact||tab==0?Visibility.Visible:Visibility.Collapsed;rightScroll.Visibility=!compact||tab==1?Visibility.Visible:Visibility.Collapsed;
                 sheetsTab.SetResourceReference(StyleProperty,tab==0?"Primary":"Outline");saveTab.SetResourceReference(StyleProperty,tab==1?"Primary":"Outline");
             }
+            private readonly WButton retry=UiTheme.Button("Повторить незавершённые",UiTheme.IconRefresh,"Outline");
+            // After an error or a cancel: only the sheets of the last batch that have no finished PDF are marked and saved again.
+            private async Task RetryUnfinishedAsync()
+            {
+                var unfinished=c.LastBatch.Where(f=>c.frames.Contains(f)&&!Finished(f)).ToList();if(unfinished.Count==0||c.running!=null)return;
+                RememberMarks(c.frames.ToList(),"Отмечены только незавершённые листы: "+unfinished.Count);var set=new HashSet<DetectedFrame>(unfinished);foreach(var f in c.frames)f.Enabled=set.Contains(f);c.UpdateCount();
+                await OutputAsync();
+            }
+            // A plain check box with its explanation always visible underneath.
+            private UIElement Option(string text,string hint,Func<bool> read,Action<bool> write)
+            {
+                var panel=new StackPanel{Margin=new Thickness(0,0,0,12)};var box=new WCheck{Content=UiTheme.Text(text,15),IsChecked=read()};box.Click+=(s,e)=>write(box.IsChecked==true);
+                refresh.Add(()=>{bool on=read();if(box.IsChecked!=on)box.IsChecked=on;});panel.Children.Add(box);panel.Children.Add(UiTheme.Hint(hint,new Thickness(34,0,0,0)));return panel;
+            }
             private void MarkAll(bool value)
             {
                 int changed=c.frames.Count(f=>f.Enabled!=value);if(changed==0)return;
@@ -573,12 +593,21 @@ namespace CadBatch.UI
                 else if(ex is ArgumentException)
                 {title="Проверьте данные";text=ex.Message+"\n\nЧто сделать: исправьте значение и повторите.";}
                 else
-                {title="Не получилось";text=ex.Message+"\n\nЧто сделать: попробуйте ещё раз. Если ошибка повторяется, сохраните отчёт: «Справка → Диагностика».";action="Открыть диагностику";run=()=>c.ShowDiagnostics();}
+                {title="Не получилось";text=ex.Message+"\n\nЧто сделать: попробуйте ещё раз. Если ошибка повторяется, нажмите «Собрать диагностику» и отправьте файл разработчику.";action="Собрать диагностику";run=()=>Guard(()=>c.CollectDiagnostics());}
                 if(action==null)ModernDialog.Message(Handle,title,text,DialogKind.Warning);
                 else if(ModernDialog.Actions(Handle,title,text,DialogKind.Warning,action,"Закрыть")==0)Dispatcher.BeginInvoke(run!);
                 return true;
             }
-            private async Task Execute(Func<Task> action){CommitGrid();await c.RunAsync(action);Sync();}
+            // The window refreshes five times a second; disk checks there would freeze it on a slow network drive.
+            // The folder is checked in the background once per change of its path (and again after each operation).
+            private string checkedFolder="";private bool folderExists,numbersDirty=true;
+            private bool FolderExists(string folder)
+            {
+                if(folder==checkedFolder)return folderExists;checkedFolder=folder;folderExists=false;if(folder.Length==0||!Path.IsPathRooted(folder))return false;
+                Task.Run(()=>Directory.Exists(folder)).ContinueWith(t=>{if(checkedFolder==folder&&!t.IsFaulted)folderExists=t.Result;},TaskScheduler.FromCurrentSynchronizationContext());
+                return false;
+            }
+            private async Task Execute(Func<Task> action){CommitGrid();await c.RunAsync(action);checkedFolder="\0";numbersDirty=true;Sync();}
             private void OnKey(object sender,KeyEventArgs e)
             {
                 bool ctrl=(Keyboard.Modifiers&System.Windows.Input.ModifierKeys.Control)!=0;
@@ -610,7 +639,8 @@ namespace CadBatch.UI
                 readiness.Foreground=ready||busy?UiTheme.Secondary:UiTheme.Warning;
                 if(busy&&!wasBusy)busySince=DateTime.Now;wasBusy=busy;progressText.Text=busy?ProgressText():"";progressText.Visibility=progressText.Text.Length>0?Visibility.Visible:Visibility.Collapsed;
                 if(undoMarks!=null&&(DateTime.Now>undoUntil||busy))undoMarks=null;undo.Visibility=undoMarks!=null?Visibility.Visible:Visibility.Collapsed;
-                if(!busy)UpdateNumberCheck();
+                int unfinished=busy?0:c.LastBatch.Count(f=>c.frames.Contains(f)&&!Finished(f));retry.Visibility=unfinished>0?Visibility.Visible:Visibility.Collapsed;if(unfinished>0)retry.Content=UiTheme.Content("Повторить незавершённые ("+unfinished+")",UiTheme.IconRefresh);
+                if(!busy&&numbersDirty){numbersDirty=false;UpdateNumberCheck();}
                 stop.Visibility=busy?Visibility.Visible:Visibility.Collapsed;activity.Visibility=busy&&c.progress.Maximum>0?Visibility.Visible:Visibility.Collapsed;
                 openResult.Visibility=!busy&&c.LastOutputFolder!=null&&c.status.Text.StartsWith("Готово",StringComparison.Ordinal)?Visibility.Visible:Visibility.Collapsed;
                 c.RefreshWorkspaceCount();summary.Text=total==0?"Здесь появятся найденные листы":c.frameSummary.Text;if(state.Text!=c.status.Text){state.Text=c.status.Text;RenderStatusIcon(busy);}

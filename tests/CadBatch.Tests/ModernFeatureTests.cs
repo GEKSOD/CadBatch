@@ -79,7 +79,7 @@ internal static partial class Program
             var frames=new[]{Detect(Candidate("1",0,0,420,297)).Frames.Single(),Detect(Candidate("2",500,0,420,297)).Frames.Single()};frames[0].Code="АР";frames[1].Code="КР";frames[0].Revision="02";
             var rows=new RegisterOptions{Columns=new[]{"Лист","Ревизия","Размер, мм"},GroupBy="Шифр"}.Rows(frames);Assert(rows.Count==5&&rows[1][0]=="Шифр: АР"&&rows[2][1]=="02"&&rows[3][0]=="Шифр: КР");
         });
-        string folder=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","ModernTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
+        string folder=Path.Combine(TestRoot,"artifacts","verification","ModernTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
         try
         {
             List<DetectedFrame> Frames()=>new[]{Candidate("M1",0,0,420,297),Candidate("M2",500,0,420,297)}.Select(c=>Detect(c).Frames.Single()).ToList();
@@ -91,7 +91,7 @@ internal static partial class Program
                     var page=document.AddPage();page.Width=PdfSharp.Drawing.XUnit.FromMillimeter(800);page.Height=PdfSharp.Drawing.XUnit.FromMillimeter(600);
                     using(var g=PdfSharp.Drawing.XGraphics.FromPdfPage(page))g.DrawLine(PdfSharp.Drawing.XPens.Red,300*unit,300*unit,320*unit,300*unit);document.Save(source);
                 }
-                string qa=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","verification","features");Directory.CreateDirectory(qa);
+                string qa=Path.Combine(TestRoot,"artifacts","verification","features");Directory.CreateDirectory(qa);
                 foreach(int rotation in new[]{0,90,180,270})
                 {
                     string rotated=Path.Combine(folder,"carrier-"+rotation+".pdf");using(var doc=PdfSharp.Pdf.IO.PdfReader.Open(source,PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify)){doc.Pages[0].Rotate=rotation;doc.Save(rotated);}

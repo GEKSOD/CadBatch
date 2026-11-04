@@ -29,13 +29,24 @@ namespace CadBatch.Desktop
                 using(var client=new NamedPipeClientStream(".",endpoint.Pipe,PipeDirection.InOut,PipeOptions.Asynchronous))
                 {
                     try{await client.ConnectAsync(4000,cancellation);}catch(TimeoutException){info=null;throw new IOException("Нет связи с AutoCAD. Откройте AutoCAD и подключитесь заново.");}
-                    string id=Guid.NewGuid().ToString("N");await BridgeProtocol.WriteAsync(client,new BridgeMessage{Id=id,Token=endpoint.Token,Method=method,Body=WireJson.Write(value)},cancellation);
+                    // The program never waits forever: quick questions get a time limit, and a cancelled operation
+                    // that AutoCAD does not acknowledge is abandoned after a short grace period. The limit covers
+                    // sending the request too: a stuck AutoCAD may not even take it from the pipe.
+                    using var reading=new CancellationTokenSource();if(QuickMethods.Contains(method))reading.CancelAfter(QuickLimit);
+                    using var sending=CancellationTokenSource.CreateLinkedTokenSource(cancellation,reading.Token);
+                    Exception Stuck(){info=null;return cancellation.IsCancellationRequested?new OperationCanceledException("AutoCAD не ответил на отмену. Операция прервана; проверьте AutoCAD и подключитесь снова.",cancellation):new IOException("AutoCAD не отвечает уже "+QuickLimit.TotalSeconds+" секунд — нет связи с CAD Batch. Возможно, в AutoCAD открыто окно или идёт команда.");}
+                    string id=Guid.NewGuid().ToString("N");
+                    try{await BridgeProtocol.WriteAsync(client,new BridgeMessage{Id=id,Token=endpoint.Token,Method=method,Body=WireJson.Write(value)},sending.Token);}
+                    catch(OperationCanceledException) when(reading.IsCancellationRequested){throw Stuck();}
                     var sendGate=new SemaphoreSlim(1);Task cancelSend=Task.CompletedTask;
-                    using(var registration=cancellation.Register(()=>{cancelSend=Task.Run(async()=>{try{await sendGate.WaitAsync();await BridgeProtocol.WriteAsync(client,new BridgeMessage{Id=id,Kind="cancel"},CancellationToken.None);}catch(IOException){}catch(ObjectDisposedException){}finally{sendGate.Release();}});}))
+                    using(var registration=cancellation.Register(()=>{reading.CancelAfter(CancelGrace);cancelSend=Task.Run(async()=>{try{await sendGate.WaitAsync();using var limit=new CancellationTokenSource(CancelGrace);await BridgeProtocol.WriteAsync(client,new BridgeMessage{Id=id,Kind="cancel"},limit.Token);}catch(IOException){}catch(ObjectDisposedException){}catch(OperationCanceledException){}finally{sendGate.Release();}});}))
                     {
                         while(true)
                         {
-                            var message=await BridgeProtocol.ReadAsync(client,CancellationToken.None);if(message.Id!=id)throw new IOException("Нарушена последовательность сообщений AutoCAD.");
+                            BridgeMessage message;
+                            try{message=await BridgeProtocol.ReadAsync(client,reading.Token);}
+                            catch(OperationCanceledException) when(reading.IsCancellationRequested){throw Stuck();}
+                            if(message.Id!=id)throw new IOException("Нарушена последовательность сообщений AutoCAD.");
                             if(message.Kind=="result")return WireJson.Read<TResult>(message.Body);
                             if(message.Kind=="error")throw new InvalidOperationException(WireJson.Read<string>(message.Body));
                             if(message.Kind=="cancelled")throw new OperationCanceledException(cancellation);
@@ -47,6 +58,8 @@ namespace CadBatch.Desktop
             }
             catch(EndOfStreamException){info=null;throw;}finally{gate.Release();CadInteraction.VisibilityChanged?.Invoke(false);}
         }
+        private static readonly HashSet<string> QuickMethods=new HashSet<string>(StringComparer.Ordinal){"info","devices","capabilities","layouts"};
+        internal static TimeSpan QuickLimit=TimeSpan.FromSeconds(30),CancelGrace=TimeSpan.FromSeconds(20);
         public Task<string[]> GetPlotDevicesAsync()=>Call<object?,string[]>("devices",null,CancellationToken.None);
         public Task<PlotCapabilities> GetPlotCapabilitiesAsync(string device)=>Call<string,PlotCapabilities>("capabilities",device,CancellationToken.None);
         public Task<string[]> GetLayoutNamesAsync()=>Call<object?,string[]>("layouts",null,CancellationToken.None);

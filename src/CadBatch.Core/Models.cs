@@ -158,6 +158,9 @@ namespace CadBatch.Core
         [DataMember] public string CombinedPdfName { get; set; } = "Комплект";
         [DataMember(EmitDefaultValue=false)] public bool? FitToPaper {get;set;}
         [DataMember(EmitDefaultValue=false)] public bool? RepeatCopiesInPdf {get;set;}
+        // Reissue: replace a PDF with the same name instead of adding "(2)".
+        [DataMember(EmitDefaultValue=false)] public bool? OverwriteExisting {get;set;}
+        [DataMember(EmitDefaultValue=false)] public IulSettings? Iul {get;set;}
         [DataMember(EmitDefaultValue=false)] public WindowSettings? Window {get;set;}
         [DataMember(EmitDefaultValue=false)] public StampMetadataSettings? Metadata {get;set;}=new StampMetadataSettings();
         public void UpgradeCatalog()
