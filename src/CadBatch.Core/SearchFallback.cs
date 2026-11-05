@@ -39,7 +39,13 @@ namespace CadBatch.Core
                 Polylines=original.Polylines,Blocks=original.Blocks,Lines=original.Lines,ExternalReferences=original.ExternalReferences,SpecialEntities=original.SpecialEntities,Viewports=original.Viewports,
                 LayerPattern=original.LayerPattern,BlockPattern=original.BlockPattern,Scales=original.Scales.ToList(),SizeToleranceMm=original.SizeToleranceMm,GeometryTolerance=original.GeometryTolerance,Stamp=original.Stamp?.Copy()
             };
-            foreach(var f in found)
+            // Scales first: frames that fit none of the chosen scales (small rectangles at odd scales) need no settings.
+            var loose=found.Where(f=>f.StampEvidence==null&&!original.Scales.Any(x=>Fits(f,x,formats,original.SizeToleranceMm,false))).ToList();
+            // Frames the user's scales already explain set the size a real sheet has in this drawing.
+            double reference=found.Where(f=>f.StampEvidence!=null||!loose.Contains(f)).Select(Area).DefaultIfEmpty(0).Max();
+            foreach(double scale in ChooseScales(loose,formats,original.SizeToleranceMm,out alternatives,reference))if(!s.Scales.Any(x=>Same(x,scale)))s.Scales.Add(scale);
+            var kept=Explained(s,found,formats);
+            foreach(var f in kept)
             {
                 var c=f.Source;
                 if(IsModel(c.Layout))s.Model=true;else s.Layouts=true;
@@ -52,30 +58,37 @@ namespace CadBatch.Core
                 if(!string.IsNullOrEmpty(c.BlockName)&&!FrameDetection.Wildcard(c.BlockName,s.BlockPattern))s.BlockPattern="*";
                 if(f.StampEvidence!=null){s.Stamp=f.StampEvidence.Settings.Copy();s.Stamp.Enabled=true;s.Stamp.OnlyStamp=false;}
             }
-            // Frames without a title block: the scales that turn most of them into plain A0–A4 sheets.
-            var loose=found.Where(f=>f.StampEvidence==null&&!original.Scales.Any(x=>Fits(f,x,formats,original.SizeToleranceMm,false))).ToList();
-            foreach(double scale in ChooseScales(loose,formats,original.SizeToleranceMm,out alternatives))if(!s.Scales.Any(x=>Same(x,scale)))s.Scales.Add(scale);
-            if(s.ActiveLayoutOnly&&found.Select(f=>f.Layout).Distinct(StringComparer.Ordinal).Skip(1).Any())s.ActiveLayoutOnly=false;
+            if(s.ActiveLayoutOnly&&kept.Select(f=>f.Layout).Distinct(StringComparer.Ordinal).Skip(1).Any())s.ActiveLayoutOnly=false;
             s.Scales=Distinct(s.Scales);
             return s;
         }
-        // Greedy: the scale that explains most frames as plain formats (then as any format, then the most usual one), until
-        // every frame is explained; at most three scales.
-        public static List<double> ChooseScales(IReadOnlyCollection<DetectedFrame> frames,IReadOnlyList<FormatDefinition> formats,double toleranceMm,out List<double> alternatives)
+        // Greedy. Real frames are the largest rectangles of a drawing, while small ones (windows, tables) fit some format at
+        // odd scales; so a scale is ranked by the area of the frames it explains, then by how many become plain A0–A4
+        // sheets, then by how many it explains at all, then by how usual it is. Further scales must explain sheets of a
+        // comparable size; at most three scales.
+        public static List<double> ChooseScales(IReadOnlyCollection<DetectedFrame> frames,IReadOnlyList<FormatDefinition> formats,double toleranceMm,out List<double> alternatives,double referenceArea=0)
         {
-            var chosen=new List<double>();alternatives=new List<double>();var remaining=frames.ToList();
+            var chosen=new List<double>();alternatives=new List<double>();var remaining=frames.ToList();double largest=referenceArea;
             var scales=Distinct(CommonScales.Concat(frames.Select(f=>f.Scale)));
             while(remaining.Count>0&&chosen.Count<3)
             {
-                var ranked=scales.Where(x=>!chosen.Any(y=>Same(x,y))).Select((x,rank)=>new{Scale=x,Rank=rank,Plain=remaining.Count(f=>Fits(f,x,formats,toleranceMm,true)),Any=remaining.Count(f=>Fits(f,x,formats,toleranceMm,false))})
-                    .Where(r=>r.Any>0).OrderByDescending(r=>r.Plain).ThenByDescending(r=>r.Any).ThenBy(r=>r.Rank).ToList();
+                var ranked=scales.Where(x=>!chosen.Any(y=>Same(x,y))).Select((x,rank)=>
+                {
+                    var fit=remaining.Where(f=>Fits(f,x,formats,toleranceMm,false)).ToList();double area=fit.Sum(Area);
+                    return new{Scale=x,Rank=rank,Area=area,AreaKey=area>0?Math.Round(Math.Log(area)*1000):double.MinValue,Biggest=fit.Count==0?0:fit.Max(Area),Plain=fit.Count(f=>Fits(f,x,formats,toleranceMm,true)),Any=fit.Count};
+                }).Where(r=>r.Any>0).OrderByDescending(r=>r.AreaKey).ThenByDescending(r=>r.Plain).ThenByDescending(r=>r.Any).ThenBy(r=>r.Rank).ToList();
                 if(ranked.Count==0)break;
                 var best=ranked[0];
-                if(chosen.Count==0)alternatives=ranked.Skip(1).Where(r=>r.Plain==best.Plain&&r.Any==best.Any).Select(r=>r.Scale).ToList();
-                chosen.Add(best.Scale);remaining.RemoveAll(f=>Fits(f,best.Scale,formats,toleranceMm,false));
+                if(best.Biggest<largest*.05)break;
+                if(chosen.Count==0)alternatives=ranked.Skip(1).Where(r=>r.AreaKey==best.AreaKey&&r.Plain==best.Plain&&r.Any==best.Any).Select(r=>r.Scale).ToList();
+                chosen.Add(best.Scale);largest=Math.Max(largest,best.Biggest);remaining.RemoveAll(f=>Fits(f,best.Scale,formats,toleranceMm,false));
             }
             return chosen;
         }
+        private static double Area(DetectedFrame f)=>f.Geometry.Width*f.Geometry.Height;
+        // The frames that the adopted settings will show: confirmed by a title block or fitting one of its scales.
+        public static List<DetectedFrame> Explained(SearchOptions adopted,IEnumerable<DetectedFrame> frames,IReadOnlyList<FormatDefinition> formats)=>
+            frames.Where(f=>f.StampEvidence!=null||adopted.Scales.Any(x=>Fits(f,x,formats,adopted.SizeToleranceMm,false))).ToList();
         private static bool Fits(DetectedFrame f,double scale,IReadOnlyList<FormatDefinition> formats,double toleranceMm,bool plainOnly)
         {
             double a=f.Geometry.Width/scale,b=f.Geometry.Height/scale;
@@ -86,6 +99,9 @@ namespace CadBatch.Core
             }
             return false;
         }
+        // What decides which frames a search finds; equal signatures find the same frames.
+        public static string Signature(SearchOptions o)=>string.Join("|",new object[]{o.Model,o.Layouts,o.ActiveLayoutOnly,o.AllOpenDocuments,o.Polylines,o.Blocks,o.Lines,o.ExternalReferences,o.SpecialEntities,o.Viewports,o.LayerPattern,o.BlockPattern,
+            string.Join(";",o.Scales.Select(x=>x.ToString("R",CultureInfo.InvariantCulture))),o.SizeToleranceMm.ToString("R",CultureInfo.InvariantCulture),o.Stamp?.Enabled==true,o.Stamp?.OnlyStamp==true,string.Join(";",o.Files??new List<string>()),o.Region==null?"":o.Region.DocumentPath+"/"+o.Region.Layout+"/"+o.Region.Points.Count});
         // Plain words for what changed, for the question to the user.
         public static List<string> Changes(SearchOptions before,SearchOptions after)
         {

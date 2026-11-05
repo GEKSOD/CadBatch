@@ -62,13 +62,13 @@ namespace CadBatch.Desktop
                     look.PreviewLook(false,1.3);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"large.png"));}
                     catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"look.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{look.Close();}};app.Run(look);return;
             }
-            if(args.Length==2&&(args[0]=="--fallback-smoke"||args[0]=="--nothing-smoke"))
+            if(args.Length==2&&(args[0]=="--fallback-smoke"||args[0]=="--nothing-smoke"||args[0]=="--missed-smoke"))
             {
                 // A computer with the old settings (model only, scale 1): the window must search wider by itself.
-                bool nothing=args[0]=="--nothing-smoke";Directory.CreateDirectory(args[1]);string settingsPath=Path.Combine(args[1],nothing?"nothing-profile.json":"fallback-profile.json");
+                string mode=args[0].Substring(2,args[0].Length-8);Directory.CreateDirectory(args[1]);string settingsPath=Path.Combine(args[1],mode+"-profile.json");
                 var old=new ProjectProfile();old.Search.Layouts=false;old.Search.Scales=new List<double>{1};ProfileStore.Save(settingsPath,old);
-                var smoke=new BatchWindow.FluentWindow(new DemoHost(nothing?"nothing":"layout100"),settingsPath){ShowIntroOnStart=false};
-                smoke.ContentRendered+=async(s,e)=>{try{await smoke.FallbackSmokeAsync(args[1],nothing,settingsPath);}catch(Exception ex){File.WriteAllText(Path.Combine(args[1],(nothing?"nothing":"fallback")+".error.txt"),ex.ToString());Environment.ExitCode=1;}finally{smoke.Close();}};
+                var smoke=new BatchWindow.FluentWindow(new DemoHost(mode=="fallback"?"layout100":mode),settingsPath){ShowIntroOnStart=false};
+                smoke.ContentRendered+=async(s,e)=>{try{await smoke.FallbackSmokeAsync(args[1],mode,settingsPath);}catch(Exception ex){File.WriteAllText(Path.Combine(args[1],mode+".error.txt"),ex.ToString());Environment.ExitCode=1;}finally{smoke.Close();}};
                 app.Run(smoke);return;
             }
             if(args.Length==2&&args[0]=="--empty-smoke")
@@ -119,8 +119,10 @@ namespace CadBatch.Desktop
             }
             if(variant.Length>0)
             {
-                double factor=variant=="layout100"?100:1.37;
+                double factor=variant=="layout100"?100:variant=="missed"?1:1.37;
                 foreach(var c in candidates){c.Layout=variant=="layout100"?"3.Вертикалка":"Model";c.Vertices=c.Vertices.Select(p=>new Point2(p.X*factor,p.Y*factor)).ToList();}
+                // "missed": every second frame is drawn with separate lines and is seen only when lines are searched.
+                if(variant=="missed"){for(int i=1;i<candidates.Count;i+=2){candidates[i].GeometryKind="Lines";candidates[i].Kind="Отрезки";}if(!profile.Search.Lines)candidates.RemoveAll(c=>c.GeometryKind=="Lines");}
                 if(!profile.Search.Layouts)candidates.RemoveAll(c=>c.Layout!="Model");if(!profile.Search.Model)candidates.RemoveAll(c=>c.Layout=="Model");
                 return Task.Run(()=>FrameDetection.Detect(candidates,profile.Search,formats,cancellation),cancellation);
             }

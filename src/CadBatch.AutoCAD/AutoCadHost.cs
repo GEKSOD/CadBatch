@@ -78,7 +78,7 @@ namespace CadBatch.AutoCAD
             var result=await Task.Run(()=>
             {
                 foreach(var group in lineGroups)
-                    foreach(var line in LineFrames.Find(group.Segments,profile.Formats,profile.Search,cancellation))
+                    foreach(var line in LineFrames.Find(group.Segments,profile.Formats,profile.Search,cancellation,warnings))
                     {
                         if(group.Clips.Any(clip=>!clip.Allows(line.Rectangle.Corners)))continue;
                         var c=group.Template;
@@ -93,7 +93,7 @@ namespace CadBatch.AutoCAD
             if(region!=null)result.Frames.RemoveAll(f=>!string.Equals(f.Source.DocumentPath,region.DocumentPath,StringComparison.OrdinalIgnoreCase)||f.Layout!=region.Layout||!PolygonVisibility.FullyVisible(f.Geometry.Corners,region.Points));
             FrameOrder.Repage(result.Frames);
             StampMetadata.Apply(result.Frames,texts,profile.Metadata??new StampMetadataSettings());
-            result.Warnings.InsertRange(0,warnings);
+            result.Warnings.InsertRange(0,warnings.Distinct());
             result.Warnings.Add("Прототип: единицы геометрии задаются масштабом (единиц DWG на мм бумаги). Для дюймов добавьте коэффициент 1/25,4 в масштаб.");
             return result;
         }

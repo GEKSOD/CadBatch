@@ -38,20 +38,7 @@ namespace CadBatch.Core
                     if(evidence!=null)scales=new[]{evidence.Scale};
                     else if(options.Stamp!.OnlyStamp)continue;
                 }
-                double best = double.MaxValue; FormatDefinition? match = null; double scale = 0;
-                foreach (var s in scales)
-                    foreach (var f in formats)
-                    {
-                        double a = geometry!.Width / s, b = geometry.Height / s;
-                        foreach (bool swap in new[] { false, true })
-                        {
-                            double dw = Math.Abs(a - (swap ? f.HeightMm : f.WidthMm));
-                            double dh = Math.Abs(b - (swap ? f.WidthMm : f.HeightMm));
-                            double error = dw / f.WidthMm + dh / f.HeightMm;
-                            if (dw <= options.SizeToleranceMm && dh <= options.SizeToleranceMm && error < best)
-                            { best = error; match = f; scale = s; }
-                        }
-                    }
+                var (match,scale)=BestFormat(geometry!,scales,formats,options.SizeToleranceMm);
                 if (match == null) { Remember(misses,geometry!); continue; }
                 if (!identities.Add(c.Key)) { result.Duplicates++; continue; }
                 long bx = (long)Math.Floor(geometry!.Center.X / bucketSize), by = (long)Math.Floor(geometry.Center.Y / bucketSize);
@@ -91,6 +78,24 @@ namespace CadBatch.Core
             if(result.Frames.Count==0)result.Warnings.Add(NothingFound(rectangles,filtered,misses,options));
             if(stampIndex!=null&&(fallbacks>0||stampsFound==0))result.Warnings.Add("Масштаб по штампу подтверждён у рамок: "+stampsFound+"; использован список масштабов: "+fallbacks+". Проверьте параметры штампа и колонку «Источник масштаба».");
             return result;
+        }
+        private static (FormatDefinition? Match,double Scale) BestFormat(Rectangle2 geometry,IEnumerable<double> scales,IReadOnlyList<FormatDefinition> formats,double toleranceMm)
+        {
+            double best = double.MaxValue; FormatDefinition? match = null; double scale = 0;
+            foreach (var s in scales)
+                foreach (var f in formats)
+                {
+                    double a = geometry.Width / s, b = geometry.Height / s;
+                    foreach (bool swap in new[] { false, true })
+                    {
+                        double dw = Math.Abs(a - (swap ? f.HeightMm : f.WidthMm));
+                        double dh = Math.Abs(b - (swap ? f.WidthMm : f.HeightMm));
+                        double error = dw / f.WidthMm + dh / f.HeightMm;
+                        if (dw <= toleranceMm && dh <= toleranceMm && error < best)
+                        { best = error; match = f; scale = s; }
+                    }
+                }
+            return (match,scale);
         }
         private static void Remember(List<Rectangle2> misses,Rectangle2 r)
         {

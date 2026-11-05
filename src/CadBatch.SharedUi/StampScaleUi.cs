@@ -22,7 +22,12 @@ namespace CadBatch.UI
             var values=AskValues("Геометрия штампа для масштаба",("Длина всей верхней линии на бумаге, мм",current.ReferenceWidthMm.ToString(CultureInfo.CurrentCulture)),
                 ("Высота штампа, мм",current.HeightMm.ToString(CultureInfo.CurrentCulture)),("Отступ от правого края бумаги, мм",current.RightMarginMm.ToString(CultureInfo.CurrentCulture)),
                 ("Отступ от нижнего края бумаги, мм",current.BottomMarginMm.ToString(CultureInfo.CurrentCulture)),("Допуск геометрии штампа, мм бумаги",current.ToleranceMm.ToString(CultureInfo.CurrentCulture)));
-            if(values==null)return;var settings=current.Copy();settings.ReferenceWidthMm=Number(values[0]);settings.HeightMm=Number(values[1]);settings.RightMarginMm=Number(values[2]);settings.BottomMarginMm=Number(values[3]);settings.ToleranceMm=Number(values[4]);settings.Validate();
+            if(values==null)return;var settings=current.Copy();settings.ReferenceWidthMm=Number(values[0]);settings.HeightMm=Number(values[1]);settings.RightMarginMm=Number(values[2]);settings.BottomMarginMm=Number(values[3]);settings.ToleranceMm=Number(values[4]);
+            // A stamp is about 185 mm wide on paper; 18500 is that width in drawing units at 1:100.
+            double factor=StampScaleSettings.UnitsFactor(settings.ReferenceWidthMm);
+            if(factor>1&&ModernDialog.Confirm(DialogHandle,"Размеры штампа в миллиметрах бумаги","Ширина штампа "+settings.ReferenceWidthMm.ToString(CultureInfo.CurrentCulture)+" похожа на размер в единицах чертежа. На бумаге штамп по ГОСТ шириной 185 мм.\n\nРазделить ширину и высоту на "+factor.ToString(CultureInfo.CurrentCulture)+"? Получится "+(settings.ReferenceWidthMm/factor).ToString("0.##",CultureInfo.CurrentCulture)+" × "+(settings.HeightMm/factor).ToString("0.##",CultureInfo.CurrentCulture)+" мм.","Разделить",DialogKind.Question,"Оставить как есть"))
+            {settings.ReferenceWidthMm/=factor;settings.HeightMm/=factor;}
+            settings.Validate();
             var modes=AskChecks("Режим масштаба",new[]{("Включить определение по штампу",stampScale.Checked),("Только подтверждённый штамп; без запасного списка масштабов",settings.OnlyStamp)});if(modes==null)return;
             settings.Enabled=modes[0];settings.OnlyStamp=modes[1];profile.Search.Stamp=settings;stampScale.Checked=settings.Enabled;RefreshStampHint();MarkScaleDirty();
         }

@@ -66,6 +66,39 @@ internal static partial class Program
             var smallAdopted=SearchFallback.Adopt(original,smallFound,formats,out var smallAlternatives);
             Assert(smallAdopted.Scales.SequenceEqual(new double[]{1,100})&&smallAlternatives.Contains(50));
         });
+        Run("An open polyline drawn back to its start is a closed outline",()=>
+        {
+            Assert(OutlineGeometry.EndsAtStart(new Point2(0,0),new Point2(0,0),new Point2(42000,0)));
+            Assert(OutlineGeometry.EndsAtStart(new Point2(0,0),new Point2(0.1,0),new Point2(42000,0)));
+            Assert(!OutlineGeometry.EndsAtStart(new Point2(0,0),new Point2(50,0),new Point2(42000,0)));
+            Assert(!OutlineGeometry.EndsAtStart(new Point2(0,0),new Point2(0,0),new Point2(0,0)));
+        });
+        Run("Line frames survive a busy plan: many angles and thousands of lines",()=>
+        {
+            var random=new Random(7);var segments=new List<FrameSegment>();
+            // A1 frame at 1:100 drawn with four lines, among 6000 short lines at 300 different angles.
+            foreach(var (a,b) in new[]{((0.0,0.0),(84100.0,0.0)),((84100.0,0.0),(84100.0,59400.0)),((84100.0,59400.0),(0.0,59400.0)),((0.0,59400.0),(0.0,0.0))})
+                segments.Add(new FrameSegment{Start=new Point2(a.Item1,a.Item2),End=new Point2(b.Item1,b.Item2),Path="F"+segments.Count});
+            for(int i=0;i<6000;i++)
+            {
+                double angle=(i%300)*Math.PI/600,x=random.NextDouble()*80000,y=random.NextDouble()*55000,length=200+random.NextDouble()*3000;
+                segments.Add(new FrameSegment{Start=new Point2(x,y),End=new Point2(x+Math.Cos(angle)*length,y+Math.Sin(angle)*length),Path="N"+i});
+            }
+            var options=SearchFallback.Wider(new SearchOptions{Scales=new List<double>{100}},1);var warnings=new List<string>();
+            var watch=System.Diagnostics.Stopwatch.StartNew();
+            var found=LineFrames.Find(segments,FormatDefinition.Defaults(),options,CancellationToken.None,warnings);
+            Assert(found.Any(f=>Math.Abs(f.Rectangle.Width*f.Rectangle.Height-84100.0*59400)<1)&&warnings.Any(w=>w.Contains("основных направлений"))&&watch.Elapsed.TotalSeconds<30);
+        });
+        Run("Small rectangles at odd scales do not add a scale next to a real sheet",()=>
+        {
+            var formats=FormatDefinition.Defaults();var original=new SearchOptions{Scales=new List<double>{100}};
+            // A real A3×3 at 1:100 and two tables that read as A4×4 at 1:0.25 (drawing in metres).
+            var sheet=Candidate("S",0,0,89100,42000);var t1=Candidate("T1",100000,0,210.25,74.25);var t2=Candidate("T2",101000,0,210.25,74.25);
+            var found=FrameDetection.Detect(new[]{sheet,t1,t2},SearchFallback.Wider(original,2),formats,CancellationToken.None).Frames;
+            Assert(found.Count==3);
+            var adopted=SearchFallback.Adopt(original,found,formats);
+            Assert(adopted.Scales.SequenceEqual(new double[]{100})&&SearchFallback.Explained(adopted,found,formats).Count==1);
+        });
         Run("Drawings in metres are named so",()=>
         {
             Assert(SearchFallback.Scale(100)=="1:100"&&SearchFallback.Scale(0.1)=="1:100 (чертёж в метрах)"&&SearchFallback.Scale(1)=="1:1");

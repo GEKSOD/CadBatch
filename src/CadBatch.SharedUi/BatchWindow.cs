@@ -147,7 +147,8 @@ namespace CadBatch.UI
         {
             ReadProfile();status.Text="Чтение объектов и поиск рамок…";
             var result=await host.SearchAsync(profile,running!.Token);
-            var empty=result;if(result.Frames.Count==0)result=await WiderSearchAsync()??result;
+            var empty=result;widerWarnings=new List<string>();
+            result=result.Frames.Count==0?await WiderSearchAsync()??result:await MissedFramesAsync(result)??result;
             searchedEmpty=result.Frames.Count==0;
             FrameOrder.PreserveEdits(frames,result.Frames);
             diagnostics=result.Warnings;frames.RaiseListChangedEvents=false;
@@ -156,7 +157,7 @@ namespace CadBatch.UI
             scaleNeedsSearch=false;
             if(string.IsNullOrWhiteSpace(folder.Text)&&frames.Count>0&&Path.IsPathRooted(frames[0].Source.DocumentPath))folder.Text=Path.Combine(Path.GetDirectoryName(frames[0].Source.DocumentPath)!,"PDF");
             diagnostics.Insert(0,$"Поиск: найдено {frames.Count}, проверено контуров {result.ObjectsVisited}, совпадений {result.Duplicates}.");
-            if(searchedEmpty)diagnostics.AddRange(widerWarnings.Select(w=>"Расширенный поиск: "+w));
+            diagnostics.AddRange(widerWarnings.Select(w=>"Расширенный поиск: "+w));
             status.Text=frames.Count==0?"Рамки не найдены — ни при текущих, ни при расширенных настройках.":"Найдено листов: "+frames.Count+(diagnostics.Count>1?" · есть замечания — «Справка → Диагностика»":"");
             if(frames.Count==0&&!widerDeclined)ExplainNothingFound(empty.Warnings.Concat(widerWarnings));
         }
@@ -166,25 +167,57 @@ namespace CadBatch.UI
         // only the settings the found frames need. A new computer starts with "model only, scale 1".
         private async Task<ScanResult?> WiderSearchAsync()
         {
-            widerDeclined=false;widerWarnings=new List<string>();var original=profile.Search;
+            widerDeclined=false;var original=profile.Search;
             for(int stage=1;stage<=SearchFallback.Stages;stage++)
             {
                 status.Text=stage==1?"Рамок нет. Ищу везде: модель, листы, блоки, отрезки, штамп…":"Пробую распространённые масштабы…";
-                ScanResult found;profile.Search=SearchFallback.Wider(original,stage);
-                try{found=await host.SearchAsync(profile,running!.Token);}finally{profile.Search=original;}
+                var found=await SearchWithAsync(SearchFallback.Wider(original,stage));
+                if(found==null)continue;
                 if(found.Frames.Count==0){widerWarnings=found.Warnings;continue;}
-                var adopted=SearchFallback.Adopt(original,found.Frames,profile.Formats,out var alternatives);var changes=SearchFallback.Changes(original,adopted);
-                if(alternatives.Count>0)changes.Add("масштаб в чертеже без штампа определён не однозначно: подходят и "+string.Join(", ",alternatives.Take(2).Select(SearchFallback.Scale))+". Проверьте форматы листов в таблице");
-                string where=string.Join(", ",found.Frames.Select(f=>string.Equals(f.Layout,"Model",StringComparison.OrdinalIgnoreCase)?"модель":"лист «"+f.Layout+"»").Distinct().Take(4));
-                string text="С текущими настройками поиска рамок нет, но с другими нашлось листов: "+found.Frames.Count+" ("+where+").\n\n"+(changes.Count>0?"Что изменится в настройках:\n• "+string.Join("\n• ",changes)+"\n\n":"")+"Показать эти листы и запомнить настройки для следующих поисков?";
-                if(ModernDialog.Actions(DialogHandle,"Рамки нашлись при других настройках",text,DialogKind.Question,"Показать и запомнить","Не надо")!=0){widerDeclined=true;return null;}
-                profile.Search=adopted;ApplyProfile();
-                try{ProfileStore.Save(profilePath,profile);}catch(Exception ex){diagnostics.Add("Настройки не сохранены: "+ex.Message);}
-                status.Text="Поиск с новыми настройками…";
-                var again=await host.SearchAsync(profile,running!.Token);
-                return again.Frames.Count>0?again:found;
+                var offered=await OfferAsync(original,found.Frames,shown=>"С текущими настройками поиска рамок нет, но с другими нашлось листов: "+shown.Count+" ("+Where(shown)+").","Рамки нашлись при других настройках","Показать и запомнить",found);
+                if(offered!=null||widerDeclined)return offered;
             }
             return null;
+        }
+        // Some frames found: once per drawing and settings in this session, check whether wider settings find more
+        // (frames drawn as separate lines, in blocks of an Xref, on layout tabs) and offer to add them.
+        private readonly HashSet<string> missedChecked=new HashSet<string>(StringComparer.Ordinal);
+        private async Task<ScanResult?> MissedFramesAsync(ScanResult current)
+        {
+            var original=profile.Search;var wider=SearchFallback.Wider(original,1);
+            if(SearchFallback.Signature(wider)==SearchFallback.Signature(original))return null;
+            string key=SearchFallback.Signature(original)+"#"+string.Join(",",current.Frames.Select(f=>f.Source.DocumentKey).Distinct(StringComparer.Ordinal).OrderBy(k=>k,StringComparer.Ordinal));
+            if(!missedChecked.Add(key))return null;
+            status.Text="Найдено листов: "+current.Frames.Count+". Проверяю, не пропущены ли другие рамки…";
+            var found=await SearchWithAsync(wider);if(found==null)return null;
+            var extra=found.Frames.Where(f=>!current.Frames.Any(c=>c.Source.DocumentKey==f.Source.DocumentKey&&c.Layout==f.Layout&&c.Geometry.SameBoundary(f.Geometry,Math.Max(original.GeometryTolerance,.01)))).ToList();
+            if(extra.Count==0)return null;
+            return await OfferAsync(original,extra,shown=>"Найдено листов: "+current.Frames.Count+". Ещё "+shown.Count+" рамок текущие настройки пропускают ("+Where(shown)+").","Найдены ещё рамки","Добавить и запомнить",null);
+        }
+        // A search with other settings; its failure (a busy plan, a broken object) never spoils the main result.
+        private async Task<ScanResult?> SearchWithAsync(SearchOptions options)
+        {
+            var original=profile.Search;profile.Search=options;
+            try{return await host.SearchAsync(profile,running!.Token);}
+            catch(Exception ex) when(!(ex is OperationCanceledException)){ErrorLog.Write("Расширенный поиск",ex);widerWarnings.Add(ex.Message);return null;}
+            finally{profile.Search=original;}
+        }
+        private static string Where(IEnumerable<DetectedFrame> found)=>string.Join(", ",found.Select(f=>string.Equals(f.Layout,"Model",StringComparison.OrdinalIgnoreCase)?"модель":"лист «"+f.Layout+"»").Distinct().Take(4));
+        // Asks to keep the settings the given frames need; on yes searches again with them.
+        private async Task<ScanResult?> OfferAsync(SearchOptions original,IReadOnlyCollection<DetectedFrame> needed,Func<List<DetectedFrame>,string> leadFor,string title,string accept,ScanResult? fallback)
+        {
+            var adopted=SearchFallback.Adopt(original,needed,profile.Formats,out var alternatives);var changes=SearchFallback.Changes(original,adopted);
+            // Small rectangles that fit only at odd scales are not offered; nothing left means nothing to ask about.
+            var shown=SearchFallback.Explained(adopted,needed,profile.Formats);if(shown.Count==0||changes.Count==0)return null;
+            string lead=leadFor(shown);
+            if(alternatives.Count>0)changes.Add("масштаб в чертеже без штампа определён не однозначно: подходят и "+string.Join(", ",alternatives.Take(2).Select(SearchFallback.Scale))+". Проверьте форматы листов в таблице");
+            string text=lead+"\n\n"+(changes.Count>0?"Что изменится в настройках:\n• "+string.Join("\n• ",changes)+"\n\n":"")+(fallback==null?"Добавить":"Показать")+" эти листы и запомнить настройки для следующих поисков?";
+            if(ModernDialog.Actions(DialogHandle,title,text,DialogKind.Question,accept,"Не надо")!=0){widerDeclined=true;return null;}
+            profile.Search=adopted;ApplyProfile();
+            try{ProfileStore.Save(profilePath,profile);}catch(Exception ex){diagnostics.Add("Настройки не сохранены: "+ex.Message);}
+            status.Text="Поиск с новыми настройками…";
+            var again=await host.SearchAsync(profile,running!.Token);
+            return again.Frames.Count>0?again:fallback;
         }
         private void ExplainNothingFound(IEnumerable<string> warnings)
         {

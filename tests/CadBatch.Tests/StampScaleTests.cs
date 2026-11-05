@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -33,6 +33,15 @@ internal static partial class Program
         {
             var frame=Candidate("F",0,0,42000,29700);frame.Attributes["SCALE"]="1:50";
             var found=Find(frame,Stamp(42000,100)).Frames.Single();Equal(found.Scale,100);Assert(found.FormatName=="А3"&&found.StampEvidence!=null&&found.ScaleSource.Contains("185"));
+        });
+        Run("Stamp sizes typed in drawing units do not hide the frame",()=>
+        {
+            // 18500 × 5500 is a 185 × 55 mm stamp at 1:100: it would mean 1:1, where 42000 × 29700 is no format, so the list decides.
+            var wrong=new SearchOptions{Scales=new List<double>{100},Stamp=new StampScaleSettings{Enabled=true,ReferenceWidthMm=18500,HeightMm=5500,RightMarginMm=500,BottomMarginMm=500}};
+            var result=Find(Candidate("F",0,0,42000,29700),Stamp(42000,100),wrong);var found=result.Frames.Single();
+            Assert(found.FormatName=="А3"&&found.Scale==100&&found.StampEvidence==null);
+            wrong.Stamp.OnlyStamp=true;Assert(Find(Candidate("F",0,0,42000,29700),Stamp(42000,100),wrong).Frames.Count==0);
+            Assert(StampScaleSettings.UnitsFactor(18500)==100&&StampScaleSettings.UnitsFactor(185)==1&&StampScaleSettings.UnitsFactor(1850)==10&&StampScaleSettings.UnitsFactor(double.NaN)==1);
         });
         Run("Stamp supports arbitrary nonstandard scale and a split upper line",()=>
         {

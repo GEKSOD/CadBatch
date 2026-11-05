@@ -720,16 +720,17 @@ namespace CadBatch.UI
             }
             // Smoke: a computer with old settings. With frames on a layout at 1:100 the window offers wider settings and keeps
             // them; with no standard frames at all it explains why. The dialog is captured and answered with its first button.
-            public async Task FallbackSmokeAsync(string folder,bool nothing,string settingsPath)
+            public async Task FallbackSmokeAsync(string folder,string mode,string settingsPath)
             {
-                string name=nothing?"nothing":"fallback";string? dialogText=null;
+                bool nothing=mode=="nothing",missed=mode=="missed";string name=mode;string? dialogText=null;
+                string accept=nothing?"Понятно":missed?"Добавить и запомнить":"Показать и запомнить";
                 var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(300)};
                 timer.Tick+=(s,e)=>
                 {
                     var sheet=Application.Current.Windows.OfType<Window>().FirstOrDefault(w=>w!=this&&w.IsVisible);if(sheet==null)return;timer.Stop();
                     sheet.UpdateLayout();UiTheme.Snapshot((FrameworkElement)sheet.Content,Path.Combine(folder,name+"-dialog.png"));
                     dialogText=string.Join("\n",Descendants<TextBlock>(sheet).Select(t=>t.Text));
-                    var primary=Descendants<WButton>(sheet).First(b=>Descendants<TextBlock>(b).Any(t=>t.Text==(nothing?"Понятно":"Показать и запомнить"))||b.Content as string==(nothing?"Понятно":"Показать и запомнить"));
+                    var primary=Descendants<WButton>(sheet).First(b=>Descendants<TextBlock>(b).Any(t=>t.Text==accept)||b.Content as string==accept);
                     ((System.Windows.Automation.Provider.IInvokeProvider)new System.Windows.Automation.Peers.ButtonAutomationPeer(primary).GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke)).Invoke();
                 };
                 timer.Start();
@@ -741,10 +742,14 @@ namespace CadBatch.UI
                 {
                     if(c.frames.Count!=0||!c.searchedEmpty||!dialogText.Contains("Самые крупные прямоугольники")||saved.Search.Layouts)throw new InvalidOperationException("Nothing smoke: wrong result.\n"+dialogText);
                 }
+                else if(missed)
+                {
+                    if(c.frames.Count!=12||!c.profile.Search.Lines||!saved.Search.Lines||!dialogText.Contains("Ещё 6 рамок")||!dialogText.Contains("отдельных отрезков"))throw new InvalidOperationException("Missed smoke: frames drawn with lines were not added. Frames: "+c.frames.Count+"\n"+dialogText);
+                }
                 else if(c.frames.Count!=12||!c.layouts.Checked||!c.profile.Search.Scales.Contains(100)||!saved.Search.Layouts||!saved.Search.Scales.Contains(100)||!dialogText.Contains("добавить масштаб 1:100"))
                     throw new InvalidOperationException("Fallback smoke: wider settings were not applied. Frames: "+c.frames.Count+"\n"+dialogText);
                 RenderTo(Path.Combine(folder,name+".png"));
-                File.WriteAllText(Path.Combine(folder,name+".txt"),(nothing?"NOTHING SMOKE PASS: the window explains that no frames exist and names the largest rectangles.":"FALLBACK SMOKE PASS: old settings found nothing; the wider search found 12 frames on a layout at 1:100, the user accepted, settings were saved.")+"\n\n"+dialogText);
+                File.WriteAllText(Path.Combine(folder,name+".txt"),(nothing?"NOTHING SMOKE PASS: the window explains that no frames exist and names the largest rectangles.":missed?"MISSED SMOKE PASS: 6 frames found; the check found 6 more drawn with lines, the user added them, settings were saved.":"FALLBACK SMOKE PASS: old settings found nothing; the wider search found 12 frames on a layout at 1:100, the user accepted, settings were saved.")+"\n\n"+dialogText);
             }
             private static IEnumerable<T> Descendants<T>(DependencyObject node) where T:DependencyObject
             {

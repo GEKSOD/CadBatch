@@ -21,6 +21,13 @@ namespace CadBatch.Core
             if(!Numeric.Positive(ReferenceWidthMm)||!Numeric.Positive(HeightMm)||!Numeric.NonNegative(RightMarginMm)||!Numeric.NonNegative(BottomMarginMm)||!Numeric.Positive(ToleranceMm)||ToleranceMm>=Math.Min(ReferenceWidthMm,HeightMm)/4)
                 throw new ArgumentException("Проверьте ширину/высоту штампа, поля и допуск. Допуск должен быть меньше четверти размеров штампа.");
         }
+        // A width far beyond any paper stamp was probably measured in drawing units: the power of ten that brings it near
+        // 185 mm, or 1 when the width is plausible.
+        public static double UnitsFactor(double widthMm)
+        {
+            if(!(widthMm>600))return 1;
+            return Math.Pow(10,Math.Round(Math.Log10(widthMm/185)));
+        }
         public StampScaleSettings Copy()=>new StampScaleSettings{Enabled=Enabled,OnlyStamp=OnlyStamp,ReferenceWidthMm=ReferenceWidthMm,HeightMm=HeightMm,RightMarginMm=RightMarginMm,BottomMarginMm=BottomMarginMm,ToleranceMm=ToleranceMm};
     }
     public sealed class StampSegment

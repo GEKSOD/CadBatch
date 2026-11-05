@@ -97,15 +97,21 @@ namespace CadBatch.AutoCAD
             elevation=0;var points=new List<Point3d>();
             if(entity is Polyline p)
             {
-                if(!p.Closed||p.NumberOfVertices<4)return null;
-                for(int i=0;i<p.NumberOfVertices;i++){if(Math.Abs(p.GetBulgeAt(i))>1e-10)return null;points.Add(p.GetPoint3dAt(i).TransformBy(transform));}
+                // Frames are often drawn without "Close": the last vertex returns to the first one.
+                int count=p.NumberOfVertices;bool closedByPoint=!p.Closed&&count>=5&&OutlineGeometry.EndsAtStart(new Point2(p.GetPoint2dAt(0).X,p.GetPoint2dAt(0).Y),new Point2(p.GetPoint2dAt(count-1).X,p.GetPoint2dAt(count-1).Y),new Point2(p.GetPoint2dAt(1).X,p.GetPoint2dAt(1).Y));
+                if(!(p.Closed||closedByPoint)||count<4)return null;if(closedByPoint)count--;
+                // Arc segments disqualify; the dropped closing vertex of an open outline has no segment of its own.
+                for(int i=0;i<count;i++){if(Math.Abs(p.GetBulgeAt(i))>1e-10)return null;points.Add(p.GetPoint3dAt(i).TransformBy(transform));}
             }
             else if(entity is Polyline2d old)
             {
-                if(!old.Closed||old.PolyType!=Poly2dType.SimplePoly)return null;
-                foreach(ObjectId id in old)
+                if(old.PolyType!=Poly2dType.SimplePoly)return null;
+                var vertices=new List<Vertex2d>();foreach(ObjectId id in old)vertices.Add((Vertex2d)tr.GetObject(id,OpenMode.ForRead));
+                bool closedByPoint=!old.Closed&&vertices.Count>=5&&OutlineGeometry.EndsAtStart(new Point2(vertices[0].Position.X,vertices[0].Position.Y),new Point2(vertices[vertices.Count-1].Position.X,vertices[vertices.Count-1].Position.Y),new Point2(vertices[1].Position.X,vertices[1].Position.Y));
+                if(!old.Closed&&!closedByPoint)return null;if(closedByPoint)vertices.RemoveAt(vertices.Count-1);
+                foreach(var vertex in vertices)
                 {
-                    var vertex=(Vertex2d)tr.GetObject(id,OpenMode.ForRead);if(Math.Abs(vertex.Bulge)>1e-10)return null;
+                    if(Math.Abs(vertex.Bulge)>1e-10)return null;
                     points.Add(new Point3d(vertex.Position.X,vertex.Position.Y,old.Elevation).TransformBy(Matrix3d.PlaneToWorld(old.Normal)).TransformBy(transform));
                 }
             }
