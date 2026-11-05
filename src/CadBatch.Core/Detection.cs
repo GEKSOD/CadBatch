@@ -18,6 +18,8 @@ namespace CadBatch.Core
             int stampsFound=0,fallbacks=0,rectangles=0,filtered=0;
             // The largest rectangles that matched no format: they tell what is wrong when nothing is found.
             var misses=new List<Rectangle2>();
+            // Inner ГОСТ frames whose sheet edge is missing; added after the outlines, unless a sheet edge was found too.
+            var inner=new List<(FrameCandidate Source,Rectangle2 Sheet,FormatDefinition Format,double Scale)>();
             var identities = new HashSet<string>(StringComparer.Ordinal);
             // Spatial buckets avoid a quadratic search through all detected frames.
             var buckets = new Dictionary<string,List<DetectedFrame>>(StringComparer.Ordinal);
@@ -39,7 +41,15 @@ namespace CadBatch.Core
                     else if(options.Stamp!.OnlyStamp)continue;
                 }
                 var (match,scale)=BestFormat(geometry!,scales,formats,options.SizeToleranceMm);
-                if (match == null) { Remember(misses,geometry!); continue; }
+                if (match == null)
+                {
+                    if(c.GeometryKind!="Lines"&&c.GeometryKind!="Exploded")
+                    {
+                        var (innerFormat,innerScale)=InnerFrames.Match(geometry!,options.Scales,formats,options.SizeToleranceMm);
+                        if(innerFormat!=null){inner.Add((c,InnerFrames.Expand(geometry!,innerScale),innerFormat,innerScale));continue;}
+                    }
+                    Remember(misses,geometry!);continue;
+                }
                 if (!identities.Add(c.Key)) { result.Duplicates++; continue; }
                 long bx = (long)Math.Floor(geometry!.Center.X / bucketSize), by = (long)Math.Floor(geometry.Center.Y / bucketSize);
                 DetectedFrame? overlap = null;
@@ -65,6 +75,18 @@ namespace CadBatch.Core
                 string key = Bucket(c, bx, by);
                 if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = new List<DetectedFrame>();
                 list.Add(frame);
+            }
+            foreach(var (c,sheet,format,s) in inner)
+            {
+                double tolerance=Math.Max(options.GeometryTolerance,options.SizeToleranceMm*s);
+                if(result.Frames.Any(f=>f.Source.DocumentKey==c.DocumentKey&&f.Layout==c.Layout&&f.Geometry.SameBoundary(sheet,tolerance))){result.Duplicates++;continue;}
+                if(!identities.Add(c.Key)){result.Duplicates++;continue;}
+                c.Kind=(string.IsNullOrEmpty(c.Kind)?"Контур":c.Kind)+" · внутренняя рамка";
+                var frame=new DetectedFrame{Source=c,Geometry=sheet,Format=format,Scale=s};if(stampIndex!=null)fallbacks++;
+                frame.SheetNumber=ReadAttribute(c,"SHEET","SHEETNUMBER","ЛИСТ","НОМЕР_ЛИСТА");frame.Title=ReadAttribute(c,"TITLE","НАИМЕНОВАНИЕ","NAME");
+                frame.Code=ReadAttribute(c,"CODE","ШИФР","ОБОЗНАЧЕНИЕ");frame.Revision=ReadAttribute(c,"REVISION","REV","РЕВИЗИЯ","ИЗМ");
+                foreach(var attribute in c.Attributes)frame.Metadata[attribute.Key]=attribute.Value;
+                result.Frames.Add(frame);
             }
             result.Frames.Sort((a,b) =>
             {

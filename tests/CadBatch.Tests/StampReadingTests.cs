@@ -43,6 +43,27 @@ internal static partial class Program
             Assert(next.SheetNumber=="2"&&next.Code=="0502.1-2024-ВК.СО"&&next.Title=="Спецификация оборудования, изделий и материалов"&&next.OriginalTitle==next.Title);
             Assert(first.SheetNumber=="1"&&first.Title=="Спецификация оборудования, изделий и материалов");
         });
+        Run("Inner ГОСТ frames give their sheet when the sheet edge is not drawn",()=>
+        {
+            // 11210.21-КР: inner frames 86599 × 40998 (А3×3) and 56898 × 40998 (А2) at 1:100, sheet edges only in pieces.
+            var options=new SearchOptions{Scales=new List<double>{100}};
+            var a=Candidate("I1",14225295,5578087,86599.18,40997.72);var b=Candidate("I2",14314406,5578087,56898.12,40997.72);
+            var found=FrameDetection.Detect(new[]{a,b},options,FormatDefinition.Defaults(),System.Threading.CancellationToken.None).Frames;
+            Assert(found.Count==2&&found.Any(f=>f.FormatName=="А3×3")&&found.Any(f=>f.FormatName=="А2")&&found.All(f=>f.Kind.Contains("внутренняя рамка")));
+            var sheet=found.Single(f=>f.FormatName=="А3×3").Geometry;
+            // The sheet edge drawn in pieces in that drawing: left 14223297, right 14312393, bottom 5577587, top 5619584.
+            Assert(Math.Abs(sheet.Corners[0].X-14223295)<3&&Math.Abs(sheet.Corners[0].Y-5577587)<3&&Math.Abs(sheet.Corners[2].X-14312393)<3&&Math.Abs(sheet.Corners[2].Y-5619584)<3);
+            Assert(Math.Abs(found.Single(f=>f.FormatName=="А3×3").WidthMm-891)<0.1);
+        });
+        Run("An inner frame next to its drawn sheet edge does not make a second sheet",()=>
+        {
+            var outer=Candidate("O",0,0,420,297);var innerFrame=Candidate("I",20.3,5.2,395,287);
+            var found=FrameDetection.Detect(new[]{innerFrame,outer},new SearchOptions(),FormatDefinition.Defaults(),System.Threading.CancellationToken.None);
+            Assert(found.Frames.Count==1&&found.Frames[0].Source.HandlePath=="O"&&found.Duplicates==1);
+            var portrait=FrameDetection.Detect(new[]{Candidate("P",0,0,185,287)},new SearchOptions(),FormatDefinition.Defaults(),System.Threading.CancellationToken.None).Frames.Single();
+            Assert(portrait.FormatName=="А4"&&Math.Abs(portrait.Geometry.Width-210)<1e-6&&Math.Abs(portrait.Geometry.Corners[0].X+20)<1e-6);
+        });
+        Run("Stamp: a code suffix starting with a hyphen is glued",()=>Assert(StampMetadata.Join(new[]{"112/10.21-КР","-3.1"})=="112/10.21-КР-3.1"&&StampMetadata.Join(new[]{"Узел","- 1"})=="Узел - 1"));
         Run("Stamp: an empty title cell falls back to the building name",()=>
         {
             var f=Frame("E1");StampMetadata.Apply(new[]{f},new[]{At(f,100,22.5,"Здание лаборатории"),At(f,125,50,"1001-26-АР2")},new StampMetadataSettings());

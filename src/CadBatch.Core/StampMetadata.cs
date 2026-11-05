@@ -71,7 +71,7 @@ namespace CadBatch.Core
             foreach(var piece in pieces)
             {
                 if(result.Length==0){result=piece;continue;}
-                bool tight=".,;:)»".IndexOf(piece[0])>=0||"-–(«/".IndexOf(result[result.Length-1])>=0;
+                bool tight=".,;:)»".IndexOf(piece[0])>=0||"-–(«/".IndexOf(result[result.Length-1])>=0||(piece.Length>1&&"-–".IndexOf(piece[0])>=0&&!char.IsWhiteSpace(piece[1]));
                 result+=(tight?"":" ")+piece;
             }
             return result.Trim();

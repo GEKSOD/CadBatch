@@ -247,7 +247,7 @@ namespace CadBatch.UI
         private void ExplainNothingFound(IEnumerable<string> warnings)
         {
             string detail=warnings.Where(w=>w.StartsWith(FrameDetection.NothingFoundPrefix,StringComparison.Ordinal)).Select(w=>w.Substring(FrameDetection.NothingFoundPrefix.Length)).LastOrDefault()??"";
-            string text="CAD Batch проверил модель и все листы, полилинии, блоки, отрезки, внешние ссылки и распространённые масштабы — рамок стандартных форматов (А0–А4 и кратных) нет.\n\nЧто проверить:\n• В AutoCAD открыт и активен нужный чертёж.\n• Рамка — это замкнутая полилиния, блок или четыре отрезка точно по размеру листа.\n• Если рамка нестандартного размера, нажмите «Собрать диагностику» и отправьте файл разработчику.";
+            string text="CAD Batch проверил модель и все листы, полилинии, блоки, отрезки, внешние ссылки и распространённые масштабы — рамок стандартных форматов (А0–А4 и кратных) нет.\n\nЧто проверить:\n• В AutoCAD открыт и активен нужный чертёж.\n• Рамка — это замкнутая полилиния, блок или четыре отрезка по размеру листа либо внутренняя рамка ГОСТ (лист минус поля 20 и 5 мм).\n• Если рамка нестандартного размера, нажмите «Собрать диагностику» и отправьте файл разработчику.";
             if(detail.Length>0)text+="\n\nЧто нашлось в чертеже: "+detail;
             if(ModernDialog.Actions(DialogHandle,"Рамки не найдены",text,DialogKind.Info,"Понятно","Собрать диагностику")==1)CollectDiagnostics();
         }

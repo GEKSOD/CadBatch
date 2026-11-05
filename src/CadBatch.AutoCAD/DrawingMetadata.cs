@@ -25,12 +25,19 @@ namespace CadBatch.AutoCAD
             }
             else if(entity is MText mtext)
             {
-                var bounds=mtext.GeometricExtents;Add(mtext.Text,new Point3d((bounds.MinPoint.X+bounds.MaxPoint.X)/2,(bounds.MinPoint.Y+bounds.MaxPoint.Y)/2,mtext.Location.Z));
+                // An empty or degenerate text has no extents (eNullExtents): it cannot be a stamp value either.
+                if(!TryCenter(mtext,out var center))return;Add(mtext.Text,new Point3d(center.X,center.Y,mtext.Location.Z));
             }
             else if(entity is DBText text)
             {
-                var bounds=text.GeometricExtents;Add(text.TextString,new Point3d((bounds.MinPoint.X+bounds.MaxPoint.X)/2,(bounds.MinPoint.Y+bounds.MaxPoint.Y)/2,text.Position.Z));
+                if(!TryCenter(text,out var center))return;Add(text.TextString,new Point3d(center.X,center.Y,text.Position.Z));
             }
+        }
+        private static bool TryCenter(Entity entity,out Point3d center)
+        {
+            center=Point3d.Origin;
+            try{var bounds=entity.GeometricExtents;center=new Point3d((bounds.MinPoint.X+bounds.MaxPoint.X)/2,(bounds.MinPoint.Y+bounds.MaxPoint.Y)/2,bounds.MinPoint.Z);return true;}
+            catch(Autodesk.AutoCAD.Runtime.Exception){return false;}
         }
     }
 }
