@@ -73,7 +73,7 @@ namespace CadBatch.UI
             {
                 if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;string path=dialog.FileName;var checkpoint=CheckpointStore.Load(path);profile=checkpoint.Job.Profile;ApplyProfile();
                 profile.Search.Files=checkpoint.Job.Rows.Select(r=>r.DocumentPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                var scan=await host.SearchAsync(profile,running!.Token);var restored=JobStore.Restore(checkpoint.Job,scan.Frames,out var warnings);ReplaceFrames(restored);diagnostics.AddRange(warnings);scaleNeedsSearch=false;
+                ScanResult scan;try{scan=await host.SearchAsync(profile,running!.Token);}finally{profile.Search.Files=null;}var restored=JobStore.Restore(checkpoint.Job,scan.Frames,out var warnings);ReplaceFrames(restored);diagnostics.AddRange(warnings);scaleNeedsSearch=false;
                 var groups=CheckpointStore.Pending(checkpoint,restored);if(groups.Count==0){status.Text="Все PDF из журнала уже созданы и проверены по SHA-256.";return;}
                 if(!ShowText("Возобновление вывода","Готовые PDF проверены по SHA-256 и будут пропущены.\r\nОсталось PDF: "+groups.Count+"; страниц: "+groups.Sum(g=>g.Items.Count)+"\r\n\r\n"+string.Join(Environment.NewLine,groups.Select(g=>g.Path)),"Продолжить вывод"))return;
                 var request=new ExportRequest{Items=groups.SelectMany(g=>g.Items).ToList(),Groups=groups,PdfMode=checkpoint.Mode,Device=profile.Device,StyleSheet=profile.StyleSheet,ColorMode=profile.ColorMode,FitToPaper=profile.FitToPaper??true,OutputCompleted=file=>{RepeatCopies(file,groups);WriteIul(file,groups);CheckpointStore.Complete(checkpoint,file);CheckpointStore.Save(path,checkpoint);}};

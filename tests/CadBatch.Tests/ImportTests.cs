@@ -71,6 +71,16 @@ internal static partial class Program
                 var rows=RegisterImport.Read(path);Assert(rows.Count==2&&rows[0].Length==3&&rows[0][2]=="Наименование"&&rows[1][2]=="Новый план");
                 var frames=Pair();var changes=RegisterImport.Plan(frames,rows,out _);Assert(changes.Count==1&&changes[0].Frame==frames[1]&&changes[0].New=="Новый план");
             });
+            Run("PDF for gluing goes through the PDF runner (size and tiles)",()=>
+            {
+                string source=Path.Combine(folder,"tile-source.pdf"),size=Path.Combine(folder,"tile-size.txt"),output=Path.Combine(folder,"tile-out.pdf");
+                using(var document=new PdfSharp.Pdf.PdfDocument()){var page=document.AddPage();page.Width=PdfSharp.Drawing.XUnit.FromMillimeter(841);page.Height=PdfSharp.Drawing.XUnit.FromMillimeter(594);document.Save(source);}
+                PdfRunner.Execute(PdfJob.Size(source,size));var wh=File.ReadAllText(size).Split(' ').Select(v=>double.Parse(v,System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                Assert(Math.Abs(wh[0]-841)<0.5&&Math.Abs(wh[1]-594)<0.5);
+                var plan=TilePlan.Create(wh[0],wh[1],210,297,10,5,1);
+                PdfRunner.Execute(PdfJob.Tile(source,output,210,297,10,5,1));
+                using(var tiles=PdfSharp.Pdf.IO.PdfReader.Open(output,PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))Assert(tiles.PageCount==plan.Count&&plan.Count>1);
+            });
             Run("PDF pages repeat by copies and keep page order",()=>
             {
                 string path=Path.Combine(folder,"copies.pdf");

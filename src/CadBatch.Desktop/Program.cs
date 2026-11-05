@@ -38,7 +38,12 @@ namespace CadBatch.Desktop
             AppDomain.CurrentDomain.UnhandledException+=(s,e)=>ErrorLog.Write("Сбой приложения",e.ExceptionObject as Exception??new Exception(Convert.ToString(e.ExceptionObject)));
             TaskScheduler.UnobservedTaskException+=(s,e)=>{ErrorLog.Write("Фоновая задача",e.Exception);e.SetObserved();};
             app.DispatcherUnhandledException+=(s,e)=>{e.Handled=true;ErrorLog.Write("Непредвиденная ошибка",e.Exception);if(args.Length==2&&args[0].EndsWith("smoke",StringComparison.Ordinal)){File.AppendAllText(args[1]+".dispatcher.txt",e.Exception+Environment.NewLine);return;}ModernDialog.Message(IntPtr.Zero,"Что-то пошло не так",e.Exception.Message,DialogKind.Warning);};
-            if(args.Length==0){app.Run(new ConnectionWindow());return;}
+            if(args.Length==0)
+            {
+                // Installers of this and older versions are no longer needed (about 85 MB each).
+                Task.Run(()=>CadBatch.Updates.UpdateClient.RemoveOldDownloads(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","Updates"),ProductInfo.Version));
+                app.Run(new ConnectionWindow());return;
+            }
             if(args.Length==2&&args[0]=="--lobby-smoke")
             {
                 var lobby=new ConnectionWindow();lobby.ContentRendered+=(s,e)=>{try{lobby.UpdateLayout();var content=(System.Windows.FrameworkElement)lobby.Content;var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(content);var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));using(var output=File.Create(args[1]))encoder.Save(output);File.WriteAllText(args[1]+".txt","Connection window PASS; no CAD or demo data required.");}catch(Exception ex){File.WriteAllText(args[1]+".error.txt",ex.ToString());Environment.ExitCode=1;}finally{lobby.Close();}};app.Run(lobby);return;

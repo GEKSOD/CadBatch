@@ -25,7 +25,13 @@ namespace CadBatch.Pdf
         [DataMember] public string Designation {get;set;}="";
         [DataMember] public string Revision {get;set;}="";
         [DataMember] public string[] Signers {get;set;}=new string[0];
+        [DataMember] public double Margin {get;set;}
+        [DataMember] public double Overlap {get;set;}
         public static PdfJob Restore(string source,string destination,double width,double height,double scale)=>new PdfJob{Operation="restore",Source=source,Destination=destination,Width=width,Height=height,Scale=scale};
+        // Size of the source page (written as "width height" in mm) and the PDF for gluing: in the worker when AutoCAD
+        // has an incompatible PDF library, like every other PDF operation.
+        public static PdfJob Size(string source,string destination)=>new PdfJob{Operation="size",Source=source,Destination=destination};
+        public static PdfJob Tile(string source,string destination,double sheetWidth,double sheetHeight,double margin,double overlap,double scale)=>new PdfJob{Operation="tile",Source=source,Destination=destination,Width=sheetWidth,Height=sheetHeight,Margin=margin,Overlap=overlap,Scale=scale};
         public static PdfJob Crop(string source,string destination,double width,double height)=>new PdfJob{Operation="crop",Source=source,Destination=destination,Width=width,Height=height};
         public static PdfJob Merge(string[] sources,string destination,string[] titles,string title)=>new PdfJob{Operation="merge",Sources=sources,Destination=destination,Titles=titles,Title=title};
         public static PdfJob Repeat(string path,int[] copies,string[]? titles)=>new PdfJob{Operation="repeat",Source=path,Copies=copies,Titles=titles??new string[0]};
@@ -72,6 +78,8 @@ namespace CadBatch.Pdf
                 case "crop":TargetSheetPdf.CropCentered(job.Source,job.Destination,job.Width,job.Height);break;
                 case "merge":TargetSheetPdf.Merge(job.Sources,job.Destination,job.Titles,job.Title.Length>0?job.Title:null);break;
                 case "repeat":TargetSheetPdf.RepeatPages(job.Source,job.Copies,job.Titles.Length>0?job.Titles:null);break;
+                case "size":TargetSheetPdf.WriteSourceSize(job.Source,job.Destination);break;
+                case "tile":TargetSheetPdf.Tile(job.Source,job.Destination,TargetSheetPdf.PlanTiles(job.Source,job.Width,job.Height,job.Margin,job.Overlap,job.Scale));break;
                 case "iul":
                     var signers=job.Signers.Concat(Enumerable.Repeat("",4)).Take(4).ToArray();
                     TargetSheetPdf.WriteIul(IulSheet.Describe(job.Source,job.Designation,job.Title,job.Revision,new IulSettings{Developer=signers[0],Checker=signers[1],NormControl=signers[2],Chief=signers[3]}),job.Destination);break;

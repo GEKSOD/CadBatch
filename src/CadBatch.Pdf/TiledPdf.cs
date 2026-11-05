@@ -11,6 +11,16 @@ namespace CadBatch.Pdf
 {
     public static partial class TargetSheetPdf
     {
+        // Page size as shown (rotation applied), millimetres; written for the caller when run in the PDF worker.
+        public static void WriteSourceSize(string source,string destination)
+        {
+            using(var dependencies=new FrameworkPdfDependencies())WriteSourceSizeCore(source,destination);
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void WriteSourceSizeCore(string source,string destination)
+        {
+            var sheet=ReadSheet(source);File.WriteAllText(destination,sheet.DisplayWidthMm.ToString("R",System.Globalization.CultureInfo.InvariantCulture)+" "+sheet.DisplayHeightMm.ToString("R",System.Globalization.CultureInfo.InvariantCulture));
+        }
         public static TilePlan PlanTiles(string source,double sheetWidth,double sheetHeight,double margin,double overlap,double scale)
         {
             using(var dependencies=new FrameworkPdfDependencies())return PlanTilesCore(source,sheetWidth,sheetHeight,margin,overlap,scale);

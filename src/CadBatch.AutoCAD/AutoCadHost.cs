@@ -43,6 +43,7 @@ namespace CadBatch.AutoCAD
             }
             }finally{if(originalActive!=null)AcApp.DocumentManager.MdiActiveDocument=originalActive;}
             var dependencies=new Dictionary<string,List<string>>();
+            var tabOrders=new Dictionary<string,int>(StringComparer.Ordinal);
             var texts=new List<DrawingText>();var candidates=new List<FrameCandidate>();var stampGeometry=new List<StampSegment>();var lineGroups=new List<LineScanGroup>();var warnings=new List<string>();int visited=0;
             await InContext(()=>
             {
@@ -70,6 +71,7 @@ namespace CadBatch.AutoCAD
                             if(selection!=null){if(!string.Equals(layout.LayoutName,selection.Layout,StringComparison.OrdinalIgnoreCase))continue;}
                             else if(layout.ModelType?!profile.Search.Model:!profile.Search.Layouts)continue;
                             if(selection==null&&profile.Search.ActiveLayoutOnly && layout.LayoutName!=Convert.ToString(AcApp.GetSystemVariable("CTAB"),CultureInfo.InvariantCulture))continue;
+                            tabOrders[DocumentKey(doc)+"|"+layout.LayoutName]=layout.TabOrder;
                             var record=(BlockTableRecord)tr.GetObject(layout.BlockTableRecordId,OpenMode.ForRead);
                             Walk(doc,layout.LayoutName,record,tr,Matrix3d.Identity,"","",new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase),new HashSet<ObjectId>(),0,profile.Search,profile.Formats,candidates,lineGroups,stampGeometry,texts,warnings,cancellation,false,"",ref visited,null,only);
                         }
@@ -89,7 +91,7 @@ namespace CadBatch.AutoCAD
                             IsExternal=c.IsExternal,DrawingModified=c.DrawingModified,Elevation=c.Elevation,Attributes=c.Attributes,Kind="Отрезки"+(c.IsExternal?" в Xref":""),GeometryKind="Lines",HandlePath="LINE:"+string.Join("+",line.Members),
                             MemberPaths=line.Members,Vertices=line.Rectangle.Corners.ToList()});
                     }
-                foreach(var c in candidates)if(dependencies.TryGetValue(c.DocumentKey,out var links))c.Dependencies=links;
+                foreach(var c in candidates){if(dependencies.TryGetValue(c.DocumentKey,out var links))c.Dependencies=links;if(tabOrders.TryGetValue(c.DocumentKey+"|"+c.Layout,out int tab))c.LayoutOrder=tab;}
                 return FrameDetection.Detect(candidates,profile.Search,profile.Formats,cancellation,stampGeometry);
             },cancellation);
             var region=profile.Search.Region;
@@ -97,7 +99,6 @@ namespace CadBatch.AutoCAD
             FrameOrder.Repage(result.Frames);
             StampMetadata.Apply(result.Frames,texts,profile.Metadata??new StampMetadataSettings());
             result.Warnings.InsertRange(0,warnings.Distinct());
-            result.Warnings.Add("Прототип: единицы геометрии задаются масштабом (единиц DWG на мм бумаги). Для дюймов добавьте коэффициент 1/25,4 в масштаб.");
             return result;
         }
         private static string DocumentKey(Document d)=>d.Database.FingerprintGuid+"|"+d.Name;
@@ -162,8 +163,9 @@ namespace CadBatch.AutoCAD
                     MediaCatalog.Clear();
                     item.Frame.Status="Ошибка: "+ex.Message;report.Errors.Add(item.Frame.File+" / "+item.Frame.Source.HandlePath+": "+ex.Message);
                     trace.Note(ex.ToString());
-                    // Stop after failure: the next page should never hide a state-restoration error.
-                    break;
+                    // A failed sheet costs that sheet only. A failure to restore AutoCAD's state (layout, view, background
+                    // plotting) stops the batch: the next sheets would be plotted on a wrong state.
+                    if(ex is AggregateException){report.Details.Add("Вывод остановлен: не удалось восстановить состояние AutoCAD.");break;}
                 }
                 finally { report.Details.Add("Рамка №"+item.Frame.Page+" / "+item.Frame.Source.HandlePath+Environment.NewLine+trace); }
                 progress.Report(new BatchProgress(i+1,request.Items.Count,item.Frame.Status));
@@ -486,6 +488,9 @@ namespace CadBatch.AutoCAD
         }
         private static async Task InContext(Action action)
         {
+            // A running command or an open dialog in AutoCAD would make the request wait unseen: say so at once.
+            int active=Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE"),CultureInfo.InvariantCulture);
+            if((active&(1|2|8))!=0)throw new InvalidOperationException("В AutoCAD выполняется команда или открыто окно. Завершите её (Esc в AutoCAD) и повторите.");
             // Do not allow a managed exception to escape AutoCAD's native command callback.
             System.Exception? failure=null;
             await AcApp.DocumentManager.ExecuteInCommandContextAsync(_=>

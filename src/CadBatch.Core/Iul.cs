@@ -56,13 +56,26 @@ namespace CadBatch.Core
     {
         // Moves a finished PDF into place. With "replace on reissue" the old file is removed first;
         // a file held open by a viewer gives a clear message instead of a system error.
+        // Puts a finished file in place of an older one without ever losing both: the old file is set aside first (an open
+        // or protected old file stays untouched, and the new one is kept beside it), restored if the new one cannot be
+        // moved, and removed only after the replacement succeeded.
         public static void MoveReplacing(string source,string destination)
         {
-            if(File.Exists(destination))
-                try{File.Delete(destination);}
-                catch(IOException){throw new IOException("Файл «"+Path.GetFileName(destination)+"» открыт в другой программе. Закройте его и повторите вывод.");}
-                catch(UnauthorizedAccessException){throw new IOException("Файл «"+Path.GetFileName(destination)+"» защищён от записи. Выберите другую папку.");}
-            File.Move(source,destination);
+            if(!File.Exists(destination)){File.Move(source,destination);return;}
+            string aside=destination+".cadbatch-old";
+            try{if(File.Exists(aside))File.Delete(aside);File.Move(destination,aside);}
+            catch(IOException){Keep(source,destination,"открыт в другой программе");}
+            catch(UnauthorizedAccessException){Keep(source,destination,"защищён от записи");}
+            try{File.Move(source,destination);}
+            catch{try{if(!File.Exists(destination))File.Move(aside,destination);}catch(IOException){}catch(UnauthorizedAccessException){}throw;}
+            try{File.Delete(aside);}catch(IOException){}catch(UnauthorizedAccessException){}
+        }
+        private static void Keep(string source,string destination,string reason)
+        {
+            string folder=Path.GetDirectoryName(destination)??"",name=Path.GetFileNameWithoutExtension(destination),extension=Path.GetExtension(destination);
+            string kept=Path.Combine(folder,name+" (новый)"+extension);for(int i=2;File.Exists(kept);i++)kept=Path.Combine(folder,name+" (новый "+i+")"+extension);
+            try{File.Move(source,kept);}catch(IOException){kept="";}catch(UnauthorizedAccessException){kept="";}
+            throw new IOException("Файл «"+Path.GetFileName(destination)+"» "+reason+", он не заменён."+(kept.Length>0?" Новый PDF сохранён рядом: «"+Path.GetFileName(kept)+"».":"")+" Закройте старый файл и повторите вывод.");
         }
     }
 }

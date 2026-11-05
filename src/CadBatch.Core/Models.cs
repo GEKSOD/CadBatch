@@ -73,6 +73,8 @@ namespace CadBatch.Core
         public string DocumentName { get; set; } = "";
         public string DocumentPath { get; set; } = "";
         public string Layout { get; set; } = "Model";
+        // Position of the layout tab in AutoCAD (Layout.TabOrder); the model is always first.
+        public int LayoutOrder { get; set; }
         public string HandlePath { get; set; } = "";
         public string Layer { get; set; } = "";
         public string BlockName { get; set; } = "";

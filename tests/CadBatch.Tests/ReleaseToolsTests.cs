@@ -30,7 +30,17 @@ internal static partial class Program
             Run("A finished PDF replaces the previous file",()=>
             {
                 string target=Path.Combine(folder,"replace.pdf"),source=Path.Combine(folder,"new.tmp");File.WriteAllText(target,"old");File.WriteAllText(source,"new");
-                OutputFiles.MoveReplacing(source,target);Assert(File.ReadAllText(target)=="new"&&!File.Exists(source));
+                OutputFiles.MoveReplacing(source,target);Assert(File.ReadAllText(target)=="new"&&!File.Exists(source)&&!File.Exists(target+".cadbatch-old"));
+            });
+            Run("An open old PDF is not lost and the new one is kept beside it",()=>
+            {
+                string target=Path.Combine(folder,"open.pdf"),source=Path.Combine(folder,"open-new.tmp");File.WriteAllText(target,"old");File.WriteAllText(source,"new");
+                using(new FileStream(target,FileMode.Open,FileAccess.Read,FileShare.Read))
+                {
+                    try{OutputFiles.MoveReplacing(source,target);throw new Exception("Expected IOException");}
+                    catch(IOException ex){Assert(ex.Message.Contains("open (новый).pdf"));}
+                }
+                Assert(File.ReadAllText(target)=="old"&&File.ReadAllText(Path.Combine(folder,"open (новый).pdf"))=="new"&&!File.Exists(source));
             });
             Run("CRC32 matches the reference value",()=>{Assert(Crc32.Of(Encoding.ASCII.GetBytes("123456789"))=="CBF43926");string file=Path.Combine(folder,"crc.txt");File.WriteAllText(file,"123456789");Assert(Crc32.OfFile(file)=="CBF43926");});
             Run("ИУЛ is an A4 sheet with the checksum of the final file",()=>

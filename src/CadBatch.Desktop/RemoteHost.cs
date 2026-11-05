@@ -74,7 +74,7 @@ namespace CadBatch.Desktop
             var report=await Call<WireExport,WireReport>("export",WireExport.From(request),cancellation,message=>
             {
                 if(message.Kind=="completed")request.OutputCompleted?.Invoke(WireJson.Read<string>(message.Body));
-                if(message.Kind=="progress"){var p=WireJson.Read<WireProgress>(message.Body);Statuses(p.Statuses);progress.Report(new BatchProgress(p.Done,p.Total,p.Text));}
+                if(message.Kind=="progress"){var p=WireJson.Read<WireProgress>(message.Body);p.ApplyTo(request.Items.Select(i=>i.Frame).ToList());progress.Report(new BatchProgress(p.Done,p.Total,p.Text));}
             });Statuses(report.Statuses);return report.ToReport();
         }
         public async Task<CadOperationResult> RunCadOperationAsync(CadOperationRequest request,IProgress<BatchProgress> progress,CancellationToken cancellation)
@@ -95,12 +95,16 @@ namespace CadBatch.Desktop
             SetForegroundWindow(window);
         }
         public static string DiscoveryDirectory=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","bridge");
-        public static List<BridgeEndpoint> Discover()
+        public static List<BridgeEndpoint> Discover()=>Scan(true);
+        // Running AutoCAD with a component of another protocol (updated CAD Batch, AutoCAD not restarted): the window says
+        // so instead of waiting for an AutoCAD that is already open.
+        public static List<BridgeEndpoint> Outdated()=>Scan(false);
+        private static List<BridgeEndpoint> Scan(bool compatible)
         {
             var list=new List<BridgeEndpoint>();if(!Directory.Exists(DiscoveryDirectory))return list;
             foreach(string path in Directory.GetFiles(DiscoveryDirectory,"*.json"))try
             {
-                var e=WireJson.Read<BridgeEndpoint>(File.ReadAllText(path));if(e.Protocol!=BridgeProtocol.Version||!e.Pipe.StartsWith("CadBatch-",StringComparison.Ordinal)||e.Token.Length<32)continue;
+                var e=WireJson.Read<BridgeEndpoint>(File.ReadAllText(path));if((e.Protocol==BridgeProtocol.Version)!=compatible||!e.Pipe.StartsWith("CadBatch-",StringComparison.Ordinal)||e.Token.Length<32)continue;
                 using(var process=System.Diagnostics.Process.GetProcessById(e.ProcessId))if(!process.HasExited&&process.ProcessName.Equals("acad",StringComparison.OrdinalIgnoreCase)){e.Description+=" · PID "+e.ProcessId+" · "+process.MainWindowTitle;list.Add(e);}
             }catch(IOException){}catch(ArgumentException){}catch(System.Runtime.Serialization.SerializationException){}catch(System.ComponentModel.Win32Exception){}
             return list;

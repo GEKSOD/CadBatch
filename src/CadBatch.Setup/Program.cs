@@ -56,6 +56,13 @@ namespace CadBatch.Setup
             }
             finally{Environment.CurrentDirectory=previous;}
             File.AppendAllText(Path.Combine(folder,"locks.txt"),"SETUP LOCKS PASS: a folder that cannot be renamed is updated in place and restored on undo."+Environment.NewLine);
+            // A retried copy meets the files of the first attempt: it must overwrite them, not fail with "file exists".
+            string copySource=Path.Combine(folder,"copy-src"),copyTarget=Path.Combine(folder,"copy-dst");Directory.CreateDirectory(Path.Combine(copySource,"Help"));
+            File.WriteAllText(Path.Combine(copySource,"a.dll"),"1");File.WriteAllText(Path.Combine(copySource,"Help","b.txt"),"1");
+            CopyTree(copySource,copyTarget);File.WriteAllText(Path.Combine(copySource,"a.dll"),"2");CopyTree(copySource,copyTarget);
+            if(File.ReadAllText(Path.Combine(copyTarget,"a.dll"))!="2")return 5;
+            if(!FileLocks.SameSession(Process.GetCurrentProcess()))return 6;
+            File.AppendAllText(Path.Combine(folder,"locks.txt"),"SETUP LOCKS PASS: a repeated copy overwrites the files of an interrupted attempt; only this session's processes count."+Environment.NewLine);
             return 0;
         }
         private static string Child(string root,string relative)
@@ -92,14 +99,16 @@ namespace CadBatch.Setup
         }
         private static void EnsureClosed()
         {
-            if(Process.GetProcessesByName("acad").Length>0)throw new InvalidOperationException("Сохраните чертежи и полностью закройте AutoCAD, затем повторите установку. Программа не закрывает AutoCAD принудительно.");
+            // Only this user's session counts: on a terminal server a colleague's AutoCAD or CAD Batch is not ours to wait for.
+            if(Process.GetProcessesByName("acad").Any(FileLocks.SameSession))throw new InvalidOperationException("Сохраните чертежи и полностью закройте AutoCAD, затем повторите установку. Программа не закрывает AutoCAD принудительно.");
             // Forgotten parts of CAD Batch (a hidden window, the PDF worker, an old installer window) can be closed for the user.
             var ours=new[]{"CadBatch","CadBatch.PdfWorker","CadBatch.Setup"}.SelectMany(Process.GetProcessesByName).Where(FileLocks.IsOurs).ToList();
             if(ours.Count>0)throw new FilesLockedException("Ещё запущены части CAD Batch: "+string.Join(", ",ours.Select(FileLocks.Describe).Distinct())+".",ours);
         }
         private static void CopyTree(string source,string destination)
         {
-            NoLinks(source);NoLinks(destination);Directory.CreateDirectory(destination);foreach(string file in Directory.GetFiles(source))File.Copy(file,Child(destination,Path.GetFileName(file)),false);
+            NoLinks(source);NoLinks(destination);Directory.CreateDirectory(destination);foreach(string file in Directory.GetFiles(source))File.Copy(file,Child(destination,Path.GetFileName(file)),true);
+            // Overwrite: a retried copy (after an antivirus held a file) meets the files the first attempt already copied.
             foreach(string directory in Directory.GetDirectories(source))CopyTree(directory,Child(destination,Path.GetFileName(directory)));
         }
         private static void Install(IProgress<string> progress)
@@ -192,6 +201,14 @@ namespace CadBatch.Setup
                 if(!Directory.Exists(parent))continue;
                 foreach(string folder in Directory.GetDirectories(parent,pattern))try{DeleteOwn(folder,parent);}catch(IOException){}catch(UnauthorizedAccessException){}
             }
+            // Downloaded installers: the installed version and older ones are no longer needed (the running one is kept).
+            string updates=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","Updates");
+            if(Directory.Exists(updates))
+                foreach(string folder in Directory.GetDirectories(updates))
+                {
+                    if(Path.GetFullPath(Application.ExecutablePath).StartsWith(Path.GetFullPath(folder).TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase))continue;
+                    try{DeleteOwn(folder,updates);}catch(IOException){}catch(UnauthorizedAccessException){}
+                }
         }
         private static void DeleteOwn(string directory,string parent)
         {

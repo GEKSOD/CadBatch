@@ -96,14 +96,14 @@ namespace CadBatch.Desktop
             if(busy)return;
             bool component=Directory.Exists(Bundle);
             bool running=CadRunning();
-            found=RemoteHost.Discover();
-            string signature=component+"|"+running+"|"+string.Join(";",found.Select(f=>f.Pipe+f.Description));
+            found=RemoteHost.Discover();var outdated=found.Count==0&&running?RemoteHost.Outdated():new List<BridgeEndpoint>();
+            string signature=component+"|"+running+"|"+string.Join(";",found.Select(f=>f.Pipe+f.Description))+"|"+outdated.Count;
             if(signature==lastSignature)return;lastSignature=signature;
             var keep=(sessions.SelectedItem as BridgeEndpoint)?.Pipe;
             checklist.Children.Clear();
             checklist.Children.Add(Step(1,"Компонент для AutoCAD",component?"Установлен":"Нужен, чтобы AutoCAD мог работать с CAD Batch",component,component?null:("Установить",InstallComponent)));
             checklist.Children.Add(Step(2,"AutoCAD запущен",running?"Работает на этом компьютере":"Запустите полный AutoCAD 2021 или новее",running,running?null:("Запустить",LaunchCad)));
-            string third=found.Count>0?(found.Count==1?"AutoCAD готов к работе":"Найдено копий AutoCAD: "+found.Count):running?"Если AutoCAD открыли до установки компонента — перезапустите его":"Появится автоматически после запуска AutoCAD";
+            string third=found.Count>0?(found.Count==1?"AutoCAD готов к работе":"Найдено копий AutoCAD: "+found.Count):outdated.Count>0?"В AutoCAD загружен компонент CAD Batch прежней версии ("+outdated[0].Version+"). Закройте AutoCAD и откройте снова — загрузится новый.":running?"Если AutoCAD открыли до установки компонента — перезапустите его":"Появится автоматически после запуска AutoCAD";
             checklist.Children.Add(Step(3,"Связь с CAD Batch",third,found.Count>0,null,last:true));
             sessionArea.Children.Clear();
             if(found.Count>1){sessionArea.Children.Add(UiTheme.Hint("Выберите AutoCAD",new Thickness(2,4,0,6)));sessions.ItemsSource=found;sessions.SelectedItem=found.FirstOrDefault(f=>f.Pipe==keep)??found[0];sessionArea.Children.Add(sessions);}

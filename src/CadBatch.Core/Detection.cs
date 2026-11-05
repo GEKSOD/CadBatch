@@ -89,15 +89,7 @@ namespace CadBatch.Core
                 foreach(var attribute in c.Attributes)frame.Metadata[attribute.Key]=attribute.Value;
                 result.Frames.Add(frame);
             }
-            result.Frames.Sort((a,b) =>
-            {
-                int v = StringComparer.OrdinalIgnoreCase.Compare(a.Source.DocumentKey,b.Source.DocumentKey);
-                if (v == 0) v = StringComparer.Ordinal.Compare(a.Layout,b.Layout);
-                if (v == 0) v = b.Geometry.Center.Y.CompareTo(a.Geometry.Center.Y);
-                if (v == 0) v = a.Geometry.Center.X.CompareTo(b.Geometry.Center.X);
-                return v;
-            });
-            for (int i=0;i<result.Frames.Count;i++) result.Frames[i].Page = i+1;
+            var ordered=FrameOrder.ByDrawing(result.Frames);result.Frames.Clear();result.Frames.AddRange(ordered);
             if(result.Frames.Count==0)result.Warnings.Add(NothingFound(rectangles,filtered,misses,options));
             if(stampIndex!=null&&(fallbacks>0||stampsFound==0))result.Warnings.Add("Масштаб по штампу подтверждён у рамок: "+stampsFound+"; использован список масштабов: "+fallbacks+". Проверьте параметры штампа и колонку «Источник масштаба».");
             return result;

@@ -191,21 +191,26 @@ namespace CadBatch.UI
                 }
                 else using(var file=new OpenFileDialog{Filter="Одностраничный PDF|*.pdf"}){if(file.ShowDialog(DialogOwner)!=DialogResult.OK)return;source=file.FileName;label=source;}
                 var values=AskValues("Бумага для склейки",("Ширина малого листа, мм","210"),("Высота малого листа, мм","297"),("Поля с каждой стороны, мм (не менее 5 для номеров)","10"),("Перекрытие, мм","5"),("Масштаб относительно PDF (1 = 100%)","1"));if(values==null)return;
-                var plan=TargetSheetPdf.PlanTiles(source,Number(values[0]),Number(values[1]),Number(values[2]),Number(values[3]),Number(values[4]));
+                // The PDF is read and written through PdfRunner: inside AutoCAD the PDF library may conflict (see 0.8.1).
+                double sheetWidth=Number(values[0]),sheetHeight=Number(values[1]),margin=Number(values[2]),overlap=Number(values[3]),scale=Number(values[4]);
+                string sizeFile=Path.Combine(Path.GetTempPath(),"CadBatch-size-"+Guid.NewGuid().ToString("N")+".txt");double[] size;
+                try{await Task.Run(()=>PdfRunner.Run(PdfJob.Size(source,sizeFile)));size=File.ReadAllText(sizeFile).Split(' ').Select(v=>double.Parse(v,CultureInfo.InvariantCulture)).ToArray();}
+                finally{if(File.Exists(sizeFile))File.Delete(sizeFile);}
+                var plan=TilePlan.Create(size[0],size[1],sheetWidth,sheetHeight,margin,overlap,scale);
                 string summary="Источник: "+label+"\r\nБумага: "+plan.SheetWidthMm+" × "+plan.SheetHeightMm+" мм; поля: "+plan.MarginMm+" мм; перекрытие: "+plan.OverlapMm+" мм\r\nМасштаб к PDF: "+plan.Scale+"\r\nВсего страниц: "+plan.Count+"; рядов: "+plan.Rows+"; столбцов: "+plan.Columns+"\r\n\r\n";
                 if(plan.Columns<=20&&plan.Rows<=30)for(int row=0;row<plan.Rows;row++)summary+=string.Join(" ",Enumerable.Range(0,plan.Columns).Select(col=>"["+(row*plan.Columns+col+1).ToString("000")+"]"))+"\r\n";
                 if(!ShowText("Схема разбивки PDF",summary+"\r\nПорядок: слева направо, сверху вниз. В просмотрщике печатайте результат в масштабе 100%, без дополнительного вписывания.","Создать PDF для склейки"))return;
                 using(var output=new SaveFileDialog{Filter="PDF|*.pdf",FileName="Листы-для-склейки.pdf",InitialDirectory=Path.IsPathRooted(folder.Text)?folder.Text:""})
                 {
                     if(output.ShowDialog(DialogOwner)!=DialogResult.OK)return;
-                    await Task.Run(()=>TargetSheetPdf.Tile(source,output.FileName,plan,running!.Token));
+                    string destination=output.FileName;await Task.Run(()=>PdfRunner.Run(PdfJob.Tile(source,destination,sheetWidth,sheetHeight,margin,overlap,scale)));
                     string report=SaveOperationReport(host.Description+"\r\nРазбивка PDF\r\n"+summary+"\r\nСоздано: "+output.FileName);status.Text="PDF для склейки: "+plan.Count+" страниц";
                     ShowText("PDF для склейки создан",output.FileName+"\r\nОтчёт: "+report+"\r\n\r\nПечатайте в масштабе 100%.");
                 }
             }
             finally{if(temporary!=null&&File.Exists(temporary))File.Delete(temporary);}
         }
-        private IProgress<BatchProgress> ExportProgress()=>new Progress<BatchProgress>(p=>{progress.Maximum=Math.Max(1,p.Total);progress.Value=Math.Min(p.Done,progress.Maximum);status.Text=p.Text;frames.ResetBindings();});
+        private IProgress<BatchProgress> ExportProgress()=>new Progress<BatchProgress>(p=>{progress.Maximum=Math.Max(1,p.Total);progress.Value=Math.Min(p.Done,progress.Maximum);status.Text=p.Text;});
         private async Task RunOperationAsync(CadOperationRequest request)
         {
             status.Text="Выполнение: "+request.Operation;var result=await host.RunCadOperationAsync(request,ExportProgress(),running!.Token);frames.ResetBindings();

@@ -20,7 +20,9 @@ namespace CadBatch.Setup
     internal static class FileLocks
     {
         private static readonly string[] OurNames={"CadBatch","CadBatch.PdfWorker","CadBatch.Setup"};
-        public static bool IsOurs(Process p){try{return OurNames.Contains(p.ProcessName,StringComparer.OrdinalIgnoreCase)&&p.Id!=Process.GetCurrentProcess().Id;}catch(InvalidOperationException){return false;}}
+        public static bool IsOurs(Process p){try{return OurNames.Contains(p.ProcessName,StringComparer.OrdinalIgnoreCase)&&p.Id!=Process.GetCurrentProcess().Id&&SameSession(p);}catch(InvalidOperationException){return false;}}
+        // On a terminal server other users' processes are listed too; only this session's can be ours to close or wait for.
+        public static bool SameSession(Process p){try{return p.SessionId==Process.GetCurrentProcess().SessionId;}catch(InvalidOperationException){return false;}catch(System.ComponentModel.Win32Exception){return false;}}
         // Runs a file system step; an antivirus or indexer usually lets go within a few seconds.
         // quick: a rename that fails a few times will not start working; the caller has another way.
         public static void Retry(string what,Action action,IEnumerable<string>? lockedPaths=null,bool quick=false)

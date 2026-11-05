@@ -34,6 +34,25 @@ namespace CadBatch.Updates
             client.DefaultRequestHeaders.UserAgent.ParseAdd("CadBatch-Updater/1.0");client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");client.DefaultRequestHeaders.Add("X-GitHub-Api-Version","2022-11-28");return client;
         }
         public static bool IsNewer(string installed,string available)=>Parse(available)>Parse(installed);
+        // Downloaded installers (about 85 MB each) of versions not newer than the running one: they are no longer needed.
+        // Folders with other names are left alone. Returns the number of removed folders; never throws.
+        public static int RemoveOldDownloads(string root,string currentVersion)
+        {
+            int removed=0;
+            try
+            {
+                if(!Directory.Exists(root))return 0;
+                foreach(string folder in Directory.GetDirectories(root))
+                {
+                    string name=Path.GetFileName(folder);
+                    if(!Regex.IsMatch(name,@"^\d+\.\d+\.\d+(\.\d+)?$",RegexOptions.CultureInvariant)||IsNewer(currentVersion,name))continue;
+                    if((new DirectoryInfo(folder).Attributes&FileAttributes.ReparsePoint)!=0)continue;
+                    try{Directory.Delete(folder,true);removed++;}catch(IOException){}catch(UnauthorizedAccessException){}
+                }
+            }
+            catch(IOException){}catch(UnauthorizedAccessException){}catch(InvalidDataException){}
+            return removed;
+        }
         private static Version Parse(string version)
         {
             if(!Regex.IsMatch(version,@"^\d+\.\d+\.\d+(\.\d+)?$",RegexOptions.CultureInvariant)||!Version.TryParse(version,out var value))throw new InvalidDataException("Некорректная версия обновления.");return value;

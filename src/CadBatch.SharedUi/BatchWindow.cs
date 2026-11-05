@@ -71,7 +71,7 @@ namespace CadBatch.UI
             DecorateMenu();
             pdf.Enabled=singlePdf.Enabled=host.CanPlot;
             if(File.Exists(profilePath))
-                try { profile=ProfileStore.Load(profilePath); } catch(Exception ex) { diagnostics.Add("Профиль не загружен: "+ex.Message); }
+                try { profile=ProfileStore.Load(profilePath);profile.Search.Region=null;profile.Search.Files=null;profile.Search.Selection=null; } catch(Exception ex) { diagnostics.Add("Профиль не загружен: "+ex.Message); }
             ApplyProfile();
             FormClosing+=(s,e)=>
             {
@@ -155,7 +155,9 @@ namespace CadBatch.UI
         private async Task ScanAsync()
         {
             try{await ScanCoreAsync();}
-            finally{profile.Search.Selection=null;pendingSelection=null;}
+            // A selection, an area or a list of files serves one search: kept, they would silently hide every other
+            // drawing from the next searches, and the simple mode does not show them.
+            finally{profile.Search.Selection=null;pendingSelection=null;profile.Search.Region=null;profile.Search.Files=null;}
         }
         private async Task ScanCoreAsync()
         {
@@ -299,11 +301,16 @@ namespace CadBatch.UI
             var facts=new[]{("PDF-файлов",groups.Count.ToString()),("Страниц",items.Count.ToString()),("Папка",profile.OutputFolder),("Плоттер",profile.Device),("Цвет",color.Text)};
             if(!ModernDialog.Plan(DialogHandle,selectedOnly?"PDF выбранного листа":"Вывод PDF","Проверьте план. Вывод можно отменить в любой момент, готовые файлы сохранятся.",facts,message,groups.Count==1?"Создать PDF":"Создать "+groups.Count+" PDF"))return;
             var request=new ExportRequest { Items=items,Device=profile.Device,StyleSheet=profile.StyleSheet,FitToPaper=fit.Checked,ColorMode=profile.ColorMode,PdfMode=mode,Groups=groups };
-            var checkpoint=CheckpointStore.Create(profile,frames.ToList(),groups,mode);
+            // Checksums of the drawings and their dependencies take long on a network drive: computed off the window thread.
+            status.Text="Подготовка журнала для продолжения вывода…";var rows=frames.ToList();var snapshot=profile;
+            var checkpoint=await Task.Run(()=>CheckpointStore.Create(snapshot,rows,groups,mode));
             string checkpointPath=Path.Combine(profile.OutputFolder,".CadBatch-jobs","Вывод-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".cadbatchjob.json");CheckpointStore.Save(checkpointPath,checkpoint);
-            request.OutputCompleted=path=>{RepeatCopies(path,groups);WriteIul(path,groups);CheckpointStore.Complete(checkpoint,path);CheckpointStore.Save(checkpointPath,checkpoint);};
+            // The journal is rewritten at most every 2 s and always at the end; a resume checks finished files by SHA-256 anyway.
+            var lastSave=DateTime.UtcNow;
+            request.OutputCompleted=path=>{RepeatCopies(path,groups);WriteIul(path,groups);CheckpointStore.Complete(checkpoint,path);if((DateTime.UtcNow-lastSave).TotalSeconds>=2){CheckpointStore.Save(checkpointPath,checkpoint);lastSave=DateTime.UtcNow;}};
             var report=await host.ExportAsync(request,new Progress<BatchProgress>(p=>
-            { progress.Maximum=Math.Max(1,p.Total);progress.Value=Math.Min(p.Done,progress.Maximum);status.Text=p.Text;frames.ResetBindings(); }),running!.Token);
+            { progress.Maximum=Math.Max(1,p.Total);progress.Value=Math.Min(p.Done,progress.Maximum);status.Text=p.Text; }),running!.Token);
+            try{CheckpointStore.Save(checkpointPath,checkpoint);}catch(Exception ex){diagnostics.Add("Журнал не сохранён: "+ex.Message);}
             diagnostics.Add("Журнал для возобновления: "+checkpointPath);
             diagnostics.AddRange(report.Errors);diagnostics.AddRange(report.Details);frames.ResetBindings();foreach(string error in report.Errors)ErrorLog.Write("Вывод PDF",error);
             Directory.CreateDirectory(profile.OutputFolder);

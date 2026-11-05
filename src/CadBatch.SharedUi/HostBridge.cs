@@ -98,7 +98,8 @@ namespace CadBatch.UI
                 case "locate":await host.LocateAsync(WireJson.Read<WireFrame>(message.Body).ToFrame());return "null";
                 case "export":
                     var export=WireJson.Read<WireExport>(message.Body).ToRequest();export.OutputCompleted=path=>writes.Send("completed",WireJson.Write(path));
-                    var report=await host.ExportAsync(export,new DirectProgress(p=>writes.Send("progress",WireJson.Write(new WireProgress{Done=p.Done,Total=p.Total,Text=p.Text,Statuses=export.Items.Select(i=>i.Frame.Status).ToArray()}))),cancellation);
+                    var sent=new string?[export.Items.Count];
+                    var report=await host.ExportAsync(export,new DirectProgress(p=>writes.Send("progress",WireJson.Write(WireProgress.Delta(p,export.Items.Select(i=>i.Frame.Status).ToList(),sent)))),cancellation);
                     return WireJson.Write(WireReport.From(report,export));
                 case "operation":
                     var request=WireJson.Read<WireOperation>(message.Body).ToRequest();var result=await host.RunCadOperationAsync(request,new DirectProgress(p=>writes.Send("progress",WireJson.Write(new WireProgress{Done=p.Done,Total=p.Total,Text=p.Text}))),cancellation);

@@ -86,11 +86,30 @@ namespace CadBatch.Core
             var rows=order==ByNumber?source.OrderBy(f=>f.SheetNumber,NaturalTextComparer.Instance).ToList():source.ToList();
             Repage(rows);return rows;
         }
-        // The search order: drawing, tab, then top to bottom and left to right.
+        // The drawing order: drawings by file name with numbers (01-АР before 02-КР), the model first and then the tabs in
+        // their AutoCAD order, then rows top to bottom — sheets whose heights overlap by half form one row whatever their
+        // format — and left to right within a row.
         public static List<DetectedFrame> ByDrawing(IEnumerable<DetectedFrame> source)
         {
-            var rows=source.OrderBy(f=>f.Source.DocumentKey,StringComparer.OrdinalIgnoreCase).ThenBy(f=>f.Layout,StringComparer.Ordinal).ThenByDescending(f=>f.Geometry.Center.Y).ThenBy(f=>f.Geometry.Center.X).ToList();
-            Repage(rows);return rows;
+            var result=new List<DetectedFrame>();
+            var documents=source.GroupBy(f=>f.Source.DocumentKey,StringComparer.Ordinal)
+                .OrderBy(g=>g.First().Source.DocumentName,NaturalTextComparer.Instance).ThenBy(g=>g.First().Source.DocumentPath,NaturalTextComparer.Instance).ThenBy(g=>g.Key,StringComparer.Ordinal);
+            foreach(var document in documents)
+                foreach(var tab in document.GroupBy(f=>f.Layout,StringComparer.Ordinal).OrderBy(g=>string.Equals(g.Key,"Model",StringComparison.OrdinalIgnoreCase)?int.MinValue:g.First().Source.LayoutOrder).ThenBy(g=>g.Key,NaturalTextComparer.Instance))
+                    result.AddRange(Rows(tab));
+            Repage(result);return result;
+        }
+        private static IEnumerable<DetectedFrame> Rows(IEnumerable<DetectedFrame> frames)
+        {
+            double Top(DetectedFrame f)=>f.Geometry.Corners.Max(p=>p.Y);double Bottom(DetectedFrame f)=>f.Geometry.Corners.Min(p=>p.Y);double Left(DetectedFrame f)=>f.Geometry.Corners.Min(p=>p.X);
+            var remaining=frames.OrderByDescending(Top).ThenBy(Left).ToList();
+            while(remaining.Count>0)
+            {
+                var first=remaining[0];double top=Top(first),bottom=Bottom(first);
+                var row=remaining.Where(f=>Math.Min(top,Top(f))-Math.Max(bottom,Bottom(f))>=.5*Math.Min(top-bottom,Top(f)-Bottom(f))).ToList();
+                foreach(var f in row)remaining.Remove(f);
+                foreach(var f in row.OrderBy(Left).ThenByDescending(Top))yield return f;
+            }
         }
         public static List<DetectedFrame> Sort(IEnumerable<DetectedFrame> source,FrameSort mode,double tolerance)
         {
