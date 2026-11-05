@@ -78,6 +78,20 @@ namespace CadBatch.Core
                 if(before.Code!=(before.OriginalCode.Length>0?before.OriginalCode:FrameDetection.ReadAttribute(before.Source,"CODE","ШИФР","ОБОЗНАЧЕНИЕ")))frame.Code=before.Code;
             }
         }
+        public const string ByNumber="number";
+        // The order chosen in the window: by sheet number (a stable sort, so equal numbers and sheets without a number keep
+        // the drawing order; those without a number go last), or the order in which the search returned the sheets.
+        public static List<DetectedFrame> Ordered(IEnumerable<DetectedFrame> source,string? order)
+        {
+            var rows=order==ByNumber?source.OrderBy(f=>f.SheetNumber,NaturalTextComparer.Instance).ToList():source.ToList();
+            Repage(rows);return rows;
+        }
+        // The search order: drawing, tab, then top to bottom and left to right.
+        public static List<DetectedFrame> ByDrawing(IEnumerable<DetectedFrame> source)
+        {
+            var rows=source.OrderBy(f=>f.Source.DocumentKey,StringComparer.OrdinalIgnoreCase).ThenBy(f=>f.Layout,StringComparer.Ordinal).ThenByDescending(f=>f.Geometry.Center.Y).ThenBy(f=>f.Geometry.Center.X).ToList();
+            Repage(rows);return rows;
+        }
         public static List<DetectedFrame> Sort(IEnumerable<DetectedFrame> source,FrameSort mode,double tolerance)
         {
             if(!Numeric.NonNegative(tolerance))throw new ArgumentException("Допуск сортировки должен быть неотрицательным.");

@@ -167,6 +167,10 @@ namespace CadBatch.UI
                 var fineCard=UiTheme.Card(new Expander{Header="Точная настройка",Content=fine,IsExpanded=false},16);stack.Children.Add(fineCard);advancedOnly.Add(fineCard);
                 var commands=new StackPanel{Margin=new Thickness(0,12,0,0)};
                 var find=UiTheme.Button("Найти рамки",UiTheme.IconSearch,"Primary");find.Height=52;find.FontSize=16;find.ToolTip="Клавиша F5";find.Click+=async(s,e)=>await FindAsync();commands.Children.Add(find);
+                // Only the sheets selected in AutoCAD: of forty sheets only the chosen ones are found and saved.
+                var inSelection=UiTheme.Button("Найти в выделенном",UiTheme.IconLocate,"Outline");inSelection.Height=44;inSelection.Margin=new Thickness(0,8,0,0);
+                inSelection.ToolTip="Выделите нужные листы в AutoCAD и нажмите — найдутся и сохранятся только они. Если ничего не выделено, AutoCAD попросит выделить.";
+                inSelection.Click+=async(s,e)=>await FindInSelectionAsync();commands.Children.Add(inSelection);refresh.Add(()=>inSelection.IsEnabled=c.running==null);
                 var log=UiTheme.Button("Диагностика",null,"Plain");log.HorizontalAlignment=HorizontalAlignment.Center;log.Margin=new Thickness(0,6,0,0);log.FontWeight=FontWeights.Normal;log.Click+=(s,e)=>c.ShowDiagnostics();commands.Children.Add(log);advancedOnly.Add(log);
                 WGrid.SetRow(commands,2);pane.Children.Add(commands);refresh.Add(()=>find.IsEnabled=c.running==null);
             }
@@ -184,6 +188,13 @@ namespace CadBatch.UI
                 var all=UiTheme.Button("Отметить все",UiTheme.IconCheck,"Outline");all.Margin=new Thickness(8,0,0,0);all.ToolTip="Все листы будут выведены в PDF";all.Click+=(s,e)=>Guard(()=>MarkAll(true));
                 var searchBox=new WGrid{Width=230,Margin=new Thickness(0,0,0,8)};search.Padding=new Thickness(36,0,11,0);searchBox.Children.Add(search);var lens=UiTheme.Icon(UiTheme.IconSearch,15,UiTheme.Tertiary);lens.Margin=new Thickness(13,0,0,0);lens.HorizontalAlignment=HorizontalAlignment.Left;lens.IsHitTestVisible=false;searchBox.Children.Add(lens);
                 search.TextChanged+=(s,e)=>ApplyFilter(search.Text);tools.Children.Add(searchBox);
+                // The order of the sheets is the order of the PDF pages; sorting by number is kept for every next search.
+                var order=new ComboBox{Name="SheetOrder",ItemsSource=new[]{"Порядок: как в чертеже","Порядок: по номеру листа"},SelectedIndex=c.profile.SheetOrder==FrameOrder.ByNumber?1:0,MinWidth=236,Margin=new Thickness(8,0,0,8),VerticalAlignment=VerticalAlignment.Top,
+                    ToolTip="В таком порядке листы идут в таблице и в PDF"};
+                System.Windows.Automation.AutomationProperties.SetName(order,"Порядок листов");
+                order.SelectionChanged+=(s,e)=>{if(order.SelectedIndex>=0&&c.running==null&&(order.SelectedIndex==1)!=(c.profile.SheetOrder==FrameOrder.ByNumber))Guard(()=>{c.SetSheetOrder(order.SelectedIndex==1);table.Items.Refresh();Sync();});};
+                refresh.Add(()=>{int want=c.profile.SheetOrder==FrameOrder.ByNumber?1:0;if(order.SelectedIndex!=want&&!order.IsDropDownOpen)order.SelectedIndex=want;order.IsEnabled=c.running==null;});
+                tools.Children.Add(order);
                 foreach(var b in new[]{all,none,locate,moreButton}){b.Margin=new Thickness(8,0,0,8);tools.Children.Add(b);}
                 WGrid.SetRow(tools,1);pane.Children.Add(tools);refresh.Add(()=>{bool on=c.running==null&&c.frames.Count>0;tools.IsEnabled=c.running==null;all.IsEnabled=none.IsEnabled=locate.IsEnabled=on;});
 
@@ -423,6 +434,7 @@ namespace CadBatch.UI
             }
             private void Open(string target){try{Process.Start(new ProcessStartInfo(target){UseShellExecute=true});}catch(Exception ex){ModernDialog.Message(Handle,"Не удалось открыть",ex.Message,DialogKind.Warning);}}
             private async Task FindAsync(){if(c.running!=null)return;await Execute(c.ScanAsync);if(c.frames.Count>0&&table.SelectedItem==null)table.SelectedIndex=0;}
+            private async Task FindInSelectionAsync(){if(c.running!=null)return;await Execute(c.SelectionScanAsync);if(c.frames.Count>0&&table.SelectedItem==null)table.SelectedIndex=0;}
             // The output button is never a dead grey block: it explains what is missing and offers to do it.
             private async Task OutputAsync()
             {
@@ -750,6 +762,21 @@ namespace CadBatch.UI
                     throw new InvalidOperationException("Fallback smoke: wider settings were not applied. Frames: "+c.frames.Count+"\n"+dialogText);
                 RenderTo(Path.Combine(folder,name+".png"));
                 File.WriteAllText(Path.Combine(folder,name+".txt"),(nothing?"NOTHING SMOKE PASS: the window explains that no frames exist and names the largest rectangles.":missed?"MISSED SMOKE PASS: 6 frames found; the check found 6 more drawn with lines, the user added them, settings were saved.":"FALLBACK SMOKE PASS: old settings found nothing; the wider search found 12 frames on a layout at 1:100, the user accepted, settings were saved.")+"\n\n"+dialogText);
+            }
+            // Smoke: "find in selection" finds only the selected sheets and is not remembered; sorting by sheet number is kept
+            // for the next search and shown by the order list.
+            public async Task SelectionSmokeAsync(string folder)
+            {
+                await FindInSelectionAsync();
+                if(c.frames.Count!=3||c.profile.Search.Selection!=null||!c.status.Text.Contains("В выделенном"))throw new InvalidOperationException("Selection smoke: expected 3 selected sheets, got "+c.frames.Count+"; "+c.status.Text);
+                await Execute(c.ScanAsync);if(c.frames.Count!=12)throw new InvalidOperationException("Selection smoke: the next search must find all sheets.");
+                for(int i=0;i<c.frames.Count;i++)c.frames[i].SheetNumber=(12-i).ToString(CultureInfo.InvariantCulture);
+                var order=Descendants<ComboBox>(this).First(b=>b.Name=="SheetOrder");order.SelectedIndex=1;Sync();
+                if(c.frames[0].SheetNumber!="1"||c.frames[11].SheetNumber!="12"||c.frames[0].Page!=1)throw new InvalidOperationException("Selection smoke: sheets are not ordered by number.");
+                await Execute(c.ScanAsync);Sync();UpdateLayout();await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+                if(c.frames[0].SheetNumber!="1"||c.profile.SheetOrder!=FrameOrder.ByNumber||order.SelectedIndex!=1)throw new InvalidOperationException("Selection smoke: the order by number was not kept for the next search.");
+                RenderTo(Path.Combine(folder,"selection.png"));
+                File.WriteAllText(Path.Combine(folder,"selection.txt"),"SELECTION SMOKE PASS: find in selection gave the 3 selected sheets and was not remembered; a normal search found 12; ordering by sheet number reordered the table and the PDF order and was kept for the next search.");
             }
             private static IEnumerable<T> Descendants<T>(DependencyObject node) where T:DependencyObject
             {

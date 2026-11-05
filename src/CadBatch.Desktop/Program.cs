@@ -62,6 +62,13 @@ namespace CadBatch.Desktop
                     look.PreviewLook(false,1.3);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"large.png"));}
                     catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"look.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{look.Close();}};app.Run(look);return;
             }
+            if(args.Length==2&&args[0]=="--selection-smoke")
+            {
+                Directory.CreateDirectory(args[1]);string settingsPath=Path.Combine(args[1],"selection-profile.json");if(File.Exists(settingsPath))File.Delete(settingsPath);
+                var smoke=new BatchWindow.FluentWindow(new DemoHost(),settingsPath){ShowIntroOnStart=false};
+                smoke.ContentRendered+=async(s,e)=>{try{await smoke.SelectionSmokeAsync(args[1]);}catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"selection.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{smoke.Close();}};
+                app.Run(smoke);return;
+            }
             if(args.Length==2&&(args[0]=="--fallback-smoke"||args[0]=="--nothing-smoke"||args[0]=="--missed-smoke"))
             {
                 // A computer with the old settings (model only, scale 1): the window must search wider by itself.
@@ -100,6 +107,8 @@ namespace CadBatch.Desktop
         public bool CanPlot=>false;
         public Task<string[]> GetLayoutNamesAsync()=>Task.FromResult(Array.Empty<string>());
         public Task<SearchRegion?> PickSearchRegionAsync()=>throw new NotSupportedException("Область выбирается в AutoCAD.");
+        // Demo: the first three sheets stand for what the user selected.
+        public Task<SearchSelection?> PickSelectionAsync()=>Task.FromResult<SearchSelection?>(new SearchSelection{DocumentPath="demo",Layout="Model",Handles=new List<string>{"64","65","66"}});
         public Task<PlotCapabilities> GetPlotCapabilitiesAsync(string device)=>Task.FromResult(new PlotCapabilities());
         public Task<string[]> GetPlotDevicesAsync()=>Task.FromResult(Array.Empty<string>());
         public Task<StampScaleMeasurement?> MeasureStampScaleAsync(double referenceWidthMm,bool twoPoints)=>throw new NotSupportedException("Укажите линию внутри AutoCAD.");
@@ -117,6 +126,7 @@ namespace CadBatch.Desktop
                     Attributes=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase) { ["SHEET"]=(i+1).ToString(),["TITLE"]=i==0?"Общие данные":"План. Разрез. Узлы — лист "+(i+1),["CODE"]="АР-01" }
                 });
             }
+            var chosen=profile.Search.Selection?.HandleSet();if(chosen!=null)candidates.RemoveAll(c=>!chosen.Contains(c.HandlePath));
             if(variant.Length>0)
             {
                 double factor=variant=="layout100"?100:variant=="missed"?1:1.37;

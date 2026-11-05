@@ -10,7 +10,7 @@ namespace CadBatch.Transport
 {
     [DataContract] public sealed class BridgeEndpoint
     {
-        [DataMember] public int Protocol {get;set;}=1;
+        [DataMember] public int Protocol {get;set;}=BridgeProtocol.Version;
         [DataMember] public string Version {get;set;}="";
         [DataMember] public int ProcessId {get;set;}
         [DataMember] public string Pipe {get;set;}="";
@@ -27,7 +27,7 @@ namespace CadBatch.Transport
     }
     [DataContract] public sealed class BridgeInfo
     {
-        [DataMember] public int Protocol {get;set;}=1;
+        [DataMember] public int Protocol {get;set;}=BridgeProtocol.Version;
         [DataMember] public string Version {get;set;}="";
         [DataMember] public string Description {get;set;}="";
         [DataMember] public bool CanPlot {get;set;}
@@ -40,7 +40,7 @@ namespace CadBatch.Transport
     }
     public static class BridgeProtocol
     {
-        public const int Version=1;
+        public const int Version=2;
         public const int MaximumMessageBytes=64*1024*1024;
         public static async Task WriteAsync(Stream stream,BridgeMessage message,CancellationToken token)
         {

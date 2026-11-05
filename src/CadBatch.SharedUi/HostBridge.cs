@@ -92,6 +92,7 @@ namespace CadBatch.UI
                 case "capabilities":return WireJson.Write(await host.GetPlotCapabilitiesAsync(WireJson.Read<string>(message.Body)));
                 case "layouts":return WireJson.Write(await host.GetLayoutNamesAsync());
                 case "region":return WireJson.Write(await host.PickSearchRegionAsync());
+                case "selection":return WireJson.Write(await host.PickSelectionAsync());
                 case "measure":var measure=WireJson.Read<WireMeasure>(message.Body);return WireJson.Write(await host.MeasureStampScaleAsync(measure.Reference,measure.TwoPoints));
                 case "search":return WireJson.Write(WireScan.From(await host.SearchAsync(WireJson.Read<ProjectProfile>(message.Body),cancellation)));
                 case "locate":await host.LocateAsync(WireJson.Read<WireFrame>(message.Body).ToFrame());return "null";

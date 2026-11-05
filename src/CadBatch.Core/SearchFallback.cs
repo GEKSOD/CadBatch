@@ -23,7 +23,7 @@ namespace CadBatch.Core
             var scales=original.Scales.ToList();if(stage==2)scales.AddRange(CommonScales);
             return new SearchOptions
             {
-                Files=original.Files,Region=original.Region,AllOpenDocuments=original.AllOpenDocuments,
+                Files=original.Files,Region=original.Region,Selection=original.Selection,AllOpenDocuments=original.AllOpenDocuments,
                 Model=true,Layouts=true,ActiveLayoutOnly=false,Polylines=true,Blocks=true,Lines=true,ExternalReferences=true,SpecialEntities=true,Viewports=original.Viewports,
                 LayerPattern="*",BlockPattern="*",Scales=Distinct(scales),SizeToleranceMm=original.SizeToleranceMm,GeometryTolerance=original.GeometryTolerance,Stamp=stamp
             };
@@ -35,7 +35,7 @@ namespace CadBatch.Core
         {
             var s=new SearchOptions
             {
-                Files=original.Files,Region=original.Region,AllOpenDocuments=original.AllOpenDocuments,Model=original.Model,Layouts=original.Layouts,ActiveLayoutOnly=original.ActiveLayoutOnly,
+                Files=original.Files,Region=original.Region,Selection=original.Selection,AllOpenDocuments=original.AllOpenDocuments,Model=original.Model,Layouts=original.Layouts,ActiveLayoutOnly=original.ActiveLayoutOnly,
                 Polylines=original.Polylines,Blocks=original.Blocks,Lines=original.Lines,ExternalReferences=original.ExternalReferences,SpecialEntities=original.SpecialEntities,Viewports=original.Viewports,
                 LayerPattern=original.LayerPattern,BlockPattern=original.BlockPattern,Scales=original.Scales.ToList(),SizeToleranceMm=original.SizeToleranceMm,GeometryTolerance=original.GeometryTolerance,Stamp=original.Stamp?.Copy()
             };
@@ -101,7 +101,7 @@ namespace CadBatch.Core
         }
         // What decides which frames a search finds; equal signatures find the same frames.
         public static string Signature(SearchOptions o)=>string.Join("|",new object[]{o.Model,o.Layouts,o.ActiveLayoutOnly,o.AllOpenDocuments,o.Polylines,o.Blocks,o.Lines,o.ExternalReferences,o.SpecialEntities,o.Viewports,o.LayerPattern,o.BlockPattern,
-            string.Join(";",o.Scales.Select(x=>x.ToString("R",CultureInfo.InvariantCulture))),o.SizeToleranceMm.ToString("R",CultureInfo.InvariantCulture),o.Stamp?.Enabled==true,o.Stamp?.OnlyStamp==true,string.Join(";",o.Files??new List<string>()),o.Region==null?"":o.Region.DocumentPath+"/"+o.Region.Layout+"/"+o.Region.Points.Count});
+            string.Join(";",o.Scales.Select(x=>x.ToString("R",CultureInfo.InvariantCulture))),o.SizeToleranceMm.ToString("R",CultureInfo.InvariantCulture),o.Stamp?.Enabled==true,o.Stamp?.OnlyStamp==true,string.Join(";",o.Files??new List<string>()),o.Region==null?"":o.Region.DocumentPath+"/"+o.Region.Layout+"/"+o.Region.Points.Count,o.Selection==null?"":o.Selection.DocumentPath+"/"+o.Selection.Layout+"/"+string.Join(",",o.Selection.Handles)});
         // Plain words for what changed, for the question to the user.
         public static List<string> Changes(SearchOptions before,SearchOptions after)
         {

@@ -48,8 +48,9 @@ namespace CadBatch.AutoCAD
             {
                 var active=AcApp.DocumentManager.MdiActiveDocument;
                 if(active==null)throw new InvalidOperationException("Откройте чертёж в AutoCAD.");
-                var documents=new List<Document>();
-                if(profile.Search.Files?.Count>0)documents.AddRange(AcApp.DocumentManager.Cast<Document>().Where(d=>profile.Search.Files.Contains(d.Name,StringComparer.OrdinalIgnoreCase)));
+                var documents=new List<Document>();var selection=profile.Search.Selection;var only=selection?.HandleSet();
+                if(selection!=null)documents.Add(AcApp.DocumentManager.Cast<Document>().FirstOrDefault(d=>string.Equals(d.Name,selection.DocumentPath,StringComparison.OrdinalIgnoreCase))??throw new InvalidOperationException("Чертёж с выделением закрыт. Выделите листы снова."));
+                else if(profile.Search.Files?.Count>0)documents.AddRange(AcApp.DocumentManager.Cast<Document>().Where(d=>profile.Search.Files.Contains(d.Name,StringComparer.OrdinalIgnoreCase)));
                 else if(profile.Search.AllOpenDocuments)foreach(Document d in AcApp.DocumentManager)documents.Add(d);
                 else documents.Add(active);
                 try
@@ -65,10 +66,12 @@ namespace CadBatch.AutoCAD
                         foreach(DBDictionaryEntry entry in layouts)
                         {
                             var layout=(Layout)tr.GetObject(entry.Value,OpenMode.ForRead);
-                            if(layout.ModelType?!profile.Search.Model:!profile.Search.Layouts)continue;
-                            if(profile.Search.ActiveLayoutOnly && layout.LayoutName!=Convert.ToString(AcApp.GetSystemVariable("CTAB"),CultureInfo.InvariantCulture))continue;
+                            // A selection belongs to one tab, whatever the "model / layouts" switches say.
+                            if(selection!=null){if(!string.Equals(layout.LayoutName,selection.Layout,StringComparison.OrdinalIgnoreCase))continue;}
+                            else if(layout.ModelType?!profile.Search.Model:!profile.Search.Layouts)continue;
+                            if(selection==null&&profile.Search.ActiveLayoutOnly && layout.LayoutName!=Convert.ToString(AcApp.GetSystemVariable("CTAB"),CultureInfo.InvariantCulture))continue;
                             var record=(BlockTableRecord)tr.GetObject(layout.BlockTableRecordId,OpenMode.ForRead);
-                            Walk(doc,layout.LayoutName,record,tr,Matrix3d.Identity,"","",new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase),new HashSet<ObjectId>(),0,profile.Search,profile.Formats,candidates,lineGroups,stampGeometry,texts,warnings,cancellation,false,"",ref visited);
+                            Walk(doc,layout.LayoutName,record,tr,Matrix3d.Identity,"","",new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase),new HashSet<ObjectId>(),0,profile.Search,profile.Formats,candidates,lineGroups,stampGeometry,texts,warnings,cancellation,false,"",ref visited,null,only);
                         }
                     }
                 }
@@ -156,6 +159,7 @@ namespace CadBatch.AutoCAD
                 }
                 catch(System.Exception ex)
                 {
+                    MediaCatalog.Clear();
                     item.Frame.Status="Ошибка: "+ex.Message;report.Errors.Add(item.Frame.File+" / "+item.Frame.Source.HandlePath+": "+ex.Message);
                     trace.Note(ex.ToString());
                     // Stop after failure: the next page should never hide a state-restoration error.
@@ -450,10 +454,20 @@ namespace CadBatch.AutoCAD
         }
         private static MediaChoice PickMedia(PlotSettings settings,PlotSettingsValidator validator,double width,double height,bool fit,OperationTrace trace,string preferred="")
         {
-            MediaChoice? best=null,carrier=null,smallCarrier=null;int skipped=0;
-            var names=validator.GetCanonicalMediaNameList(settings).Cast<string>().ToArray();
-            trace.Note("Носителей в PC3: "+names.Length);
-            foreach(string name in names.Where(n=>string.IsNullOrWhiteSpace(preferred)||string.Equals(n,preferred,StringComparison.OrdinalIgnoreCase)))
+            // Reading every paper size of a PC3 took about a second per sheet; the catalogue is read once per device.
+            int skipped=0;
+            var entries=MediaCatalog.Get(settings.PlotConfigurationName,()=>ReadMediaCatalog(settings,validator,trace,out skipped),out bool cached);
+            trace.Note("Носителей в PC3: "+entries.Count+(cached?" (каталог уже прочитан в этом сеансе)":"; недоступных пропущено: "+skipped));
+            MediaPick pick;
+            try{pick=MediaPicker.Pick(entries,width,height,fit,preferred);}
+            catch(InvalidOperationException) when(cached){MediaCatalog.Forget(settings.PlotConfigurationName);throw;}
+            if(pick.IsCarrier)trace.Note("Кратный формат: промежуточная бумага "+pick.Width+" x "+pick.Height+" мм; масштаб носителя "+pick.ScaleFactor+"; итоговый PDF "+width+" x "+height+" мм.");
+            return new MediaChoice{Name=pick.Name,Rotation=pick.Rotated?PlotRotation.Degrees090:PlotRotation.Degrees000,Score=pick.Score,Margins=pick.Margins,Width=pick.Width,Height=pick.Height,IsCarrier=pick.IsCarrier,ScaleFactor=pick.ScaleFactor};
+        }
+        private static List<MediaEntry> ReadMediaCatalog(PlotSettings settings,PlotSettingsValidator validator,OperationTrace trace,out int skipped)
+        {
+            skipped=0;var entries=new List<MediaEntry>();
+            foreach(string name in validator.GetCanonicalMediaNameList(settings).Cast<string>())
             {
                 // Probe in a disposable COPY. One stale/unsupported PC3 media must not fail the entire job.
                 using(var probe=new PlotSettings(settings.ModelType))
@@ -463,41 +477,12 @@ namespace CadBatch.AutoCAD
                         probe.CopyFrom(settings);validator.SetCanonicalMediaName(probe,name);
                         validator.SetPlotPaperUnits(probe,PlotPaperUnit.Millimeters);validator.SetPlotRotation(probe,PlotRotation.Degrees000);
                         var size=probe.PlotPaperSize;var margins=probe.PlotPaperMargins;
-                        double margin=Math.Abs(margins.MinPoint.X)+Math.Abs(margins.MinPoint.Y)+Math.Abs(margins.MaxPoint.X)+Math.Abs(margins.MaxPoint.Y);
-                        foreach(bool rotated in new[]{false,true})
-                        {
-                            double w=rotated?size.Y:size.X,h=rotated?size.X:size.Y;
-                            double error=Math.Abs(w-width)+Math.Abs(h-height);
-                            double carrierScale=Math.Min(1,Math.Min(w/width,h/height));
-                            if(margin<=.05&&carrierScale>0&&(smallCarrier==null||carrierScale>smallCarrier.ScaleFactor))smallCarrier=new MediaChoice{Name=name,Rotation=rotated?PlotRotation.Degrees090:PlotRotation.Degrees000,Margins=margin,Width=w,Height=h,IsCarrier=true,ScaleFactor=carrierScale};
-                            var rotation=rotated?PlotRotation.Degrees090:PlotRotation.Degrees000;
-                            if(Math.Abs(w-width)<=1 && Math.Abs(h-height)<=1)
-                            {
-                                double score=error+margin;
-                                if(best==null || score<best.Score)best=new MediaChoice {Name=name,Rotation=rotation,Score=score,Margins=margin,Width=w,Height=h};
-                            }
-                            else if(w>=width-0.01 && h>=height-0.01 && margin<=0.05)
-                            {
-                                // Full-bleed carrier preserves a centered physical-size window. The PDF is
-                                // subsequently trimmed by page boxes, retaining vector content and colors.
-                                double score=w*h;
-                                if(carrier==null || score<carrier.Score)carrier=new MediaChoice{Name=name,Rotation=rotation,Score=score,Margins=margin,Width=w,Height=h,IsCarrier=true};
-                            }
-                        }
+                        entries.Add(new MediaEntry{Name=name,Width=size.X,Height=size.Y,Margins=Math.Abs(margins.MinPoint.X)+Math.Abs(margins.MinPoint.Y)+Math.Abs(margins.MaxPoint.X)+Math.Abs(margins.MaxPoint.Y)});
                     }
                     catch(AcException ex){skipped++;trace.Note("Пропущен носитель "+name+": "+ex.ErrorStatus+" / "+ex.Message);}
                 }
             }
-            trace.Note("Недоступных носителей пропущено: "+skipped);
-            if(best==null)
-            {
-                if(carrier==null)carrier=smallCarrier;
-                if(carrier==null)throw new InvalidOperationException("В PC3 нет бумаги "+width+" × "+height+" мм и полного носителя достаточного размера. Проверено: "+names.Length+"; недоступно: "+skipped+".");
-                best=carrier;
-                trace.Note("Кратный формат: промежуточная бумага "+best.Width+" x "+best.Height+" мм; масштаб носителя "+best.ScaleFactor+"; итоговый PDF "+width+" x "+height+" мм.");
-            }
-            if(!fit && best.Margins>1)throw new InvalidOperationException("Носитель имеет поля. Включите «Вписать в бумагу» для первого теста.");
-            return best;
+            return entries;
         }
         private static async Task InContext(Action action)
         {

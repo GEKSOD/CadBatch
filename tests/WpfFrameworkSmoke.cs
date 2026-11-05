@@ -14,6 +14,7 @@ class WpfFrameworkSmoke : IBatchHost
     public Task<string[]> GetPlotDevicesAsync(){return Task.FromResult(new string[0]);}
     public Task<string[]> GetLayoutNamesAsync(){return Task.FromResult(new string[0]);}
     public Task<SearchRegion> PickSearchRegionAsync(){return Task.FromResult<SearchRegion>(null);}
+    public Task<SearchSelection> PickSelectionAsync(){return Task.FromResult<SearchSelection>(null);}
     public Task<StampScaleMeasurement> MeasureStampScaleAsync(double width,bool twoPoints){return Task.FromResult<StampScaleMeasurement>(null);}
     public Task<ScanResult> SearchAsync(ProjectProfile profile,CancellationToken token)
     {

@@ -22,7 +22,7 @@ namespace CadBatch.AutoCAD
         private static bool HasClip(BlockReference block,Transaction tr)=>!block.ExtensionDictionary.IsNull&&((DBDictionary)tr.GetObject(block.ExtensionDictionary,OpenMode.ForRead)).Contains("ACAD_FILTER");
         private static void Walk(Document doc,string layout,BlockTableRecord record,Transaction tr,Matrix3d transform,string path,string blockName,
             Dictionary<string,string> inherited,HashSet<ObjectId> ancestors,int depth,SearchOptions options,IReadOnlyList<FormatDefinition> formats,List<FrameCandidate> output,List<LineScanGroup> lineGroups,List<StampSegment> stampGeometry,List<DrawingText> texts,
-            List<string> warnings,CancellationToken cancellation,bool external,string parentLayer,ref int visited,List<ClipBoundary>? clips=null)
+            List<string> warnings,CancellationToken cancellation,bool external,string parentLayer,ref int visited,List<ClipBoundary>? clips=null,HashSet<string>? only=null)
         {
             if(depth>24||!ancestors.Add(record.ObjectId)){warnings.Add(doc.Name+": циклическая или слишком глубокая вложенность.");return;}
             var lines=new Dictionary<string,LineScanGroup>(StringComparer.OrdinalIgnoreCase);
@@ -31,6 +31,8 @@ namespace CadBatch.AutoCAD
                 foreach(ObjectId id in record)
                 {
                     cancellation.ThrowIfCancellationRequested();visited++;if(id.IsErased)continue;
+                    // Selection search: only the selected objects of the tab; the contents of selected blocks are read in full.
+                    if(only!=null&&!only.Contains(id.Handle.ToString()))continue;
                     try
                     {
                         if(!(tr.GetObject(id,OpenMode.ForRead) is Entity entity)||!entity.Visible)continue;

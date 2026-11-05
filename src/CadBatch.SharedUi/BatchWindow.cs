@@ -143,23 +143,48 @@ namespace CadBatch.UI
             finally { running.Dispose();running=null;search.Enabled=show.Enabled=true;pdf.Enabled=singlePdf.Enabled=host.CanPlot;cancel.Enabled=false;progress.Value=0;toolsMenu.Enabled=true;grid.Enabled=true;findBox.Enabled=outputBox.Enabled=true;workspaceToolbar.Enabled=true;RefreshSelection();pdf.Enabled=singlePdf.Enabled=host.CanPlot; }
         }
         public Task SearchForSmokeTestAsync()=>RunAsync(ScanAsync);
+        // "Find in selection": only the objects selected in AutoCAD are searched, so only those sheets reach the PDF.
+        private SearchSelection? pendingSelection;
+        private async Task SelectionScanAsync()
+        {
+            status.Text="Выделите листы в AutoCAD…";
+            var selection=await host.PickSelectionAsync();
+            if(selection==null){status.Text="Выделение отменено.";return;}
+            pendingSelection=selection;await ScanAsync();
+        }
         private async Task ScanAsync()
         {
-            ReadProfile();status.Text="Чтение объектов и поиск рамок…";
+            try{await ScanCoreAsync();}
+            finally{profile.Search.Selection=null;pendingSelection=null;}
+        }
+        private async Task ScanCoreAsync()
+        {
+            ReadProfile();profile.Search.Selection=pendingSelection;bool selected=pendingSelection!=null;
+            status.Text=selected?"Поиск рамок в выделенном ("+pendingSelection!.Handles.Count+" объектов)…":"Чтение объектов и поиск рамок…";
             var result=await host.SearchAsync(profile,running!.Token);
             var empty=result;widerWarnings=new List<string>();
             result=result.Frames.Count==0?await WiderSearchAsync()??result:await MissedFramesAsync(result)??result;
             searchedEmpty=result.Frames.Count==0;
             FrameOrder.PreserveEdits(frames,result.Frames);
+            var ordered=FrameOrder.Ordered(result.Frames,profile.SheetOrder);
             diagnostics=result.Warnings;frames.RaiseListChangedEvents=false;
-            try { frames.Clear();foreach(var f in result.Frames)frames.Add(f); }
+            try { frames.Clear();foreach(var f in ordered)frames.Add(f); }
             finally { frames.RaiseListChangedEvents=true;frames.ResetBindings(); }
             scaleNeedsSearch=false;
             if(string.IsNullOrWhiteSpace(folder.Text)&&frames.Count>0&&Path.IsPathRooted(frames[0].Source.DocumentPath))folder.Text=Path.Combine(Path.GetDirectoryName(frames[0].Source.DocumentPath)!,"PDF");
             diagnostics.Insert(0,$"Поиск: найдено {frames.Count}, проверено контуров {result.ObjectsVisited}, совпадений {result.Duplicates}.");
             diagnostics.AddRange(widerWarnings.Select(w=>"Расширенный поиск: "+w));
-            status.Text=frames.Count==0?"Рамки не найдены — ни при текущих, ни при расширенных настройках.":"Найдено листов: "+frames.Count+(diagnostics.Count>1?" · есть замечания — «Справка → Диагностика»":"");
-            if(frames.Count==0&&!widerDeclined)ExplainNothingFound(empty.Warnings.Concat(widerWarnings));
+            status.Text=frames.Count==0?(selected?"В выделенном рамок нет.":"Рамки не найдены — ни при текущих, ни при расширенных настройках."):(selected?"В выделенном найдено листов: ":"Найдено листов: ")+frames.Count+(diagnostics.Count>1?" · есть замечания — «Справка → Диагностика»":"");
+            if(frames.Count==0&&selected&&!widerDeclined)Notify("В выделенных объектах нет рамок листов.\n\nВыделите листы целиком — например, рамкой выбора слева направо вокруг нужных листов — и нажмите «Найти в выделенном» ещё раз.","Рамки не найдены",DialogKind.Info);
+            else if(frames.Count==0&&!widerDeclined)ExplainNothingFound(empty.Warnings.Concat(widerWarnings));
+        }
+        // The visible order choice; it is kept in the profile and applied after every search.
+        private void SetSheetOrder(bool byNumber)
+        {
+            profile.SheetOrder=byNumber?FrameOrder.ByNumber:null;
+            if(frames.Count==0)return;
+            ReplaceFrames(byNumber?FrameOrder.Ordered(frames,profile.SheetOrder):FrameOrder.ByDrawing(frames));
+            status.Text=byNumber?(frames.Any(f=>string.IsNullOrWhiteSpace(f.SheetNumber))?"Листы упорядочены по номеру; листы без номера — в конце.":"Листы упорядочены по номеру листа."):"Листы идут в порядке чертежа.";
         }
         // True after a search that found nothing: the empty table then says so instead of inviting a first search.
         private bool searchedEmpty,widerDeclined;private List<string> widerWarnings=new List<string>();

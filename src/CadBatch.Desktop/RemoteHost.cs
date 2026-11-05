@@ -23,7 +23,7 @@ namespace CadBatch.Desktop
         public async Task ConnectAsync(){info=await Call<object?,BridgeInfo>("info",null,CancellationToken.None);if(info.Protocol!=BridgeProtocol.Version)throw new InvalidOperationException("Несовместимый компонент AutoCAD. Обновите установку CAD Batch.");}
         private async Task<TResult> Call<TRequest,TResult>(string method,TRequest value,CancellationToken cancellation,Action<BridgeMessage>? notify=null)
         {
-            if(method=="locate"||method=="measure"||method=="region"||method=="operation")try{using(var process=System.Diagnostics.Process.GetProcessById(endpoint.ProcessId)){AllowSetForegroundWindow(endpoint.ProcessId);if(process.MainWindowHandle!=IntPtr.Zero){ShowWindow(process.MainWindowHandle,9);SetForegroundWindow(process.MainWindowHandle);}}}catch(ArgumentException){}
+            if(method=="locate"||method=="measure"||method=="region"||method=="operation")try{using(var process=System.Diagnostics.Process.GetProcessById(endpoint.ProcessId)){AllowSetForegroundWindow(endpoint.ProcessId);if(process.MainWindowHandle!=IntPtr.Zero)BringToFront(process.MainWindowHandle);}}catch(ArgumentException){}
             await gate.WaitAsync(cancellation);try
             {
                 using(var client=new NamedPipeClientStream(".",endpoint.Pipe,PipeDirection.InOut,PipeOptions.Asynchronous))
@@ -64,6 +64,7 @@ namespace CadBatch.Desktop
         public Task<PlotCapabilities> GetPlotCapabilitiesAsync(string device)=>Call<string,PlotCapabilities>("capabilities",device,CancellationToken.None);
         public Task<string[]> GetLayoutNamesAsync()=>Call<object?,string[]>("layouts",null,CancellationToken.None);
         public Task<SearchRegion?> PickSearchRegionAsync()=>Call<object?,SearchRegion?>("region",null,CancellationToken.None);
+        public Task<SearchSelection?> PickSelectionAsync()=>Call<object?,SearchSelection?>("selection",null,CancellationToken.None);
         public Task<StampScaleMeasurement?> MeasureStampScaleAsync(double referenceWidthMm,bool twoPoints)=>Call<WireMeasure,StampScaleMeasurement?>("measure",new WireMeasure{Reference=referenceWidthMm,TwoPoints=twoPoints},CancellationToken.None);
         public async Task<ScanResult> SearchAsync(ProjectProfile profile,CancellationToken cancellation)=>(await Call<ProjectProfile,WireScan>("search",profile,cancellation)).ToScan();
         public Task LocateAsync(DetectedFrame frame)=>Call<WireFrame,object?>("locate",WireFrame.From(frame),CancellationToken.None);
@@ -85,6 +86,14 @@ namespace CadBatch.Desktop
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(int processId);
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window,int command);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+        // AutoCAD comes to the front as the user left it. "Restore" un-maximizes a maximized window, so it is used only
+        // when AutoCAD is minimized: then Windows brings back its previous state, full screen included.
+        internal static void BringToFront(IntPtr window)
+        {
+            if(IsIconic(window))ShowWindow(window,9);
+            SetForegroundWindow(window);
+        }
         public static string DiscoveryDirectory=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","bridge");
         public static List<BridgeEndpoint> Discover()
         {

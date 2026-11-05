@@ -12,6 +12,8 @@ namespace CadBatch.UI
         Task<string[]> GetPlotDevicesAsync();
         Task<PlotCapabilities> GetPlotCapabilitiesAsync(string device);
         Task<SearchRegion?> PickSearchRegionAsync();
+        // The objects selected in AutoCAD, or asks to select them there; null when the user cancels.
+        Task<SearchSelection?> PickSelectionAsync();
         Task<string[]> GetLayoutNamesAsync();
         Task<StampScaleMeasurement?> MeasureStampScaleAsync(double referenceWidthMm,bool twoPoints);
         Task<ScanResult> SearchAsync(ProjectProfile profile,CancellationToken cancellation);

@@ -31,6 +31,8 @@ namespace CadBatch.Core
     {
         [DataMember(EmitDefaultValue=false)] public List<string>? Files {get;set;}
         [DataMember(EmitDefaultValue=false)] public SearchRegion? Region {get;set;}
+        // Only these objects selected in AutoCAD; set for one search, never kept in the profile.
+        [DataMember(EmitDefaultValue=false)] public SearchSelection? Selection {get;set;}
         [DataMember] public bool Model { get; set; } = true;
         [DataMember] public bool Layouts { get; set; } = true;
         [DataMember] public bool AllOpenDocuments { get; set; }
@@ -53,7 +55,7 @@ namespace CadBatch.Core
             if (!Polylines && !Blocks && !Lines && !Viewports) throw new ArgumentException("Выберите хотя бы один тип источника.");
             if (Scales == null || (Scales.Count == 0 && Stamp?.Enabled!=true) || Scales.Any(x => !Numeric.Positive(x))) throw new ArgumentException("Масштабы должны быть положительными числами.");
             if (!Numeric.NonNegative(SizeToleranceMm) || !Numeric.Positive(GeometryTolerance)) throw new ArgumentException("Некорректный допуск.");
-            Stamp?.Validate();Region?.Validate();
+            Stamp?.Validate();Region?.Validate();Selection?.Validate();
         }
     }
 
@@ -161,10 +163,13 @@ namespace CadBatch.Core
         // Reissue: replace a PDF with the same name instead of adding "(2)".
         [DataMember(EmitDefaultValue=false)] public bool? OverwriteExisting {get;set;}
         [DataMember(EmitDefaultValue=false)] public IulSettings? Iul {get;set;}
+        // "number": after every search the sheets, and so the PDF pages, follow the sheet numbers; otherwise the drawing order.
+        [DataMember(EmitDefaultValue=false)] public string? SheetOrder {get;set;}
         [DataMember(EmitDefaultValue=false)] public WindowSettings? Window {get;set;}
         [DataMember(EmitDefaultValue=false)] public StampMetadataSettings? Metadata {get;set;}=new StampMetadataSettings();
         public void UpgradeCatalog()
         {
+            Metadata?.Upgrade();
             if(CatalogVersion>=2)return;
             if(Formats==null)Formats=new List<FormatDefinition>();
             var additions=CatalogVersion<1?FormatDefinition.Defaults():new List<FormatDefinition>{new FormatDefinition("А4×9",1892,297)};

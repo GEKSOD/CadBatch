@@ -19,7 +19,7 @@ namespace CadBatch.UI
     public sealed class StampZonesWindow : Window
     {
         private const double StampWidth=185,StampHeight=55,K=3;
-        private static readonly (string Key,string Name)[] Known={("Title","Наименование"),("Code","Шифр"),("SheetNumber","Номер листа"),("SheetCount","Всего листов"),("Revision","Ревизия")};
+        private static readonly (string Key,string Name)[] Known={("Title","Наименование листа"),("Object","Объект (здание)"),("Code","Шифр"),("Stage","Стадия"),("SheetNumber","Номер листа"),("SheetCount","Всего листов"),("Revision","Ревизия")};
         public StampMetadataSettings Settings {get;private set;}
         private readonly ObservableCollection<Zone> zones=new ObservableCollection<Zone>();
         private readonly ListBox list=new ListBox();

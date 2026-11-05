@@ -224,6 +224,8 @@ internal static partial class Program
         RunImportTests();
         RunReleaseToolsTests();
         RunSearchFallbackTests();
+        RunSelectionOrderTests();
+        RunStampReadingTests();
         Run("500-frame synthetic corpus",()=>
         {
             var candidates=Enumerable.Range(0,500).Select(i=>Candidate(i.ToString(),i%25*500,i/25*400,420,297)).ToList();

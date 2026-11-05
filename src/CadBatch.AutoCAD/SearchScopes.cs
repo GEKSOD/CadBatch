@@ -26,6 +26,49 @@ namespace CadBatch.AutoCAD
                 result=new SearchRegion{DocumentPath=doc.Name,Layout=Autodesk.AutoCAD.ApplicationServices.Core.Application.GetSystemVariable("CTAB").ToString()??"Model",Corners=corners.Select(p=>new[]{p.X,p.Y}).ToArray()};result.Validate();
             });return result;
         }
+        public async Task<SearchSelection?> PickSelectionAsync()
+        {
+            // The objects selected before the button was pressed: read in the application context, before a command
+            // context can clear the pick-first set. Nothing selected: AutoCAD asks to select the sheets.
+            ObjectId[] ids=Array.Empty<ObjectId>();var doc=ActiveDocument();
+            try{var implied=doc.Editor.SelectImplied();if(implied.Status==PromptStatus.OK&&implied.Value!=null)ids=implied.Value.GetObjectIds();}
+            catch(Autodesk.AutoCAD.Runtime.Exception){}
+            SearchSelection? result=null;
+            await InContext(()=>
+            {
+                doc=ActiveDocument();
+                if(ids.Length==0||ids[0].Database!=doc.Database)
+                {
+                    ids=Array.Empty<ObjectId>();
+                    var again=doc.Editor.SelectImplied();if(again.Status==PromptStatus.OK&&again.Value!=null)ids=again.Value.GetObjectIds();
+                }
+                if(ids.Length==0)
+                {
+                    using var interaction=CadInteraction.Begin();doc.Window.Focus();
+                    var options=new PromptSelectionOptions{MessageForAdding="\nCAD Batch: выделите листы — рамки целиком, можно рамкой выбора — и нажмите Enter: ",MessageForRemoval="\nCAD Batch: уберите лишнее: "};
+                    var picked=doc.Editor.GetSelection(options);if(picked.Status!=PromptStatus.OK||picked.Value==null)return;
+                    ids=picked.Value.GetObjectIds();
+                }
+                // Selected objects of one tab; with objects of several tabs (selected through viewports) the tab with most.
+                using(var tr=doc.Database.TransactionManager.StartOpenCloseTransaction())
+                {
+                    var byTab=new Dictionary<string,List<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach(var id in ids)
+                    {
+                        if(id.IsErased||id.Database!=doc.Database)continue;
+                        if(!(tr.GetObject(id,OpenMode.ForRead) is Entity entity))continue;
+                        if(!(tr.GetObject(entity.OwnerId,OpenMode.ForRead) is BlockTableRecord owner)||!owner.IsLayout)continue;
+                        string tab=((Layout)tr.GetObject(owner.LayoutId,OpenMode.ForRead)).LayoutName;
+                        if(!byTab.TryGetValue(tab,out var handles))byTab[tab]=handles=new List<string>();
+                        handles.Add(entity.Handle.ToString());
+                    }
+                    if(byTab.Count==0)return;
+                    var best=byTab.OrderByDescending(p=>p.Value.Count).First();
+                    result=new SearchSelection{DocumentPath=doc.Name,Layout=best.Key,Handles=best.Value};result.Validate();
+                }
+            });
+            return result;
+        }
         private sealed class ClipBoundary
         {
             public List<Point2> Points=new List<Point2>();public bool Inverted;
