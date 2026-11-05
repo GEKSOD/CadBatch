@@ -9,6 +9,7 @@ for framework,year in {'net48':'2023-2024','net8.0-windows':'2025-2026','net10.0
   assert p.read_bytes()==(dest/p.name).read_bytes(),p
   assert not re.match(r'(?i)(AcDbMgd|AcCoreMgd|AcMgd|AdWindows|AcWindows)',p.name)
  summary['targets'][year]=len(list(dest.glob('*.dll')))
+assert (release/'CadBatch.bundle/Contents/PdfWorker/CadBatch.PdfWorker.exe').exists() and (release/'CadBatch.bundle/Contents/PdfWorker/CadBatch.PdfWorker.exe.config').exists()
 manifest=E.parse(release/'CadBatch.bundle/PackageContents.xml').getroot();assert manifest.attrib['AppVersion']==v
 assert all(x.attrib['LoadOnAutoCADStartup']=='True' for x in manifest.iter('ComponentEntry'))
 config=json.loads((release/'App/CadBatch.runtimeconfig.json').read_text())['runtimeOptions'];assert 'includedFrameworks' in config and 'frameworks' not in config

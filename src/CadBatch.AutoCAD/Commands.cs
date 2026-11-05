@@ -16,6 +16,8 @@ namespace CadBatch.AutoCAD
         {
             try
             {
+                // PDF work falls back to this separate process if AutoCAD has an incompatible PDF dependency loaded.
+                CadBatch.Pdf.PdfRunner.WorkerPath=System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(Commands).Assembly.Location)!,"..","PdfWorker","CadBatch.PdfWorker.exe"));
                 var dispatcher=System.Windows.Threading.Dispatcher.CurrentDispatcher;
                 bridge=new HostBridge(new AutoCadHost(),async action=>await (await dispatcher.InvokeAsync(action)),System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CadBatch","bridge"));
             }

@@ -45,7 +45,7 @@ namespace CadBatch.AutoCAD
                         item.Frame.Status="Страница подготовлена";done++;progress.Report(new BatchProgress(done,total,item.Frame.Status));
                     }
                     cancellation.ThrowIfCancellationRequested();string combined=Path.Combine(scratch,"combined.pdf");
-                    await Task.Run(()=>TargetSheetPdf.Merge(pages,combined,titles,Path.GetFileNameWithoutExtension(group.Path)));cancellation.ThrowIfCancellationRequested();
+                    await Task.Run(()=>PdfRunner.Run(PdfJob.Merge(pages.ToArray(),combined,titles.ToArray(),Path.GetFileNameWithoutExtension(group.Path))));cancellation.ThrowIfCancellationRequested();
                     OutputFiles.MoveReplacing(combined,group.Path);report.Files.Add(group.Path);request.OutputCompleted?.Invoke(group.Path);foreach(var item in group.Items)item.Frame.Status="В PDF: "+Path.GetFileName(group.Path);
                 }
                 catch(OperationCanceledException){report.Cancelled=true;foreach(var item in group.Items)item.Frame.Status="Комплект отменён — PDF не сохранён";break;}

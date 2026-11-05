@@ -30,6 +30,11 @@ foreach($pair in @(@('net48','2023-2024'),@('net8.0-windows','2025-2026'),@('net
  if(Test-Path -LiteralPath $deps){Copy-Item -LiteralPath $deps -Destination $target -Force}
  if(Test-Path -LiteralPath (Join-Path $source 'runtimes')){Copy-Item -LiteralPath (Join-Path $source 'runtimes') -Destination $target -Recurse -Force}
 }
+# PDF worker: a separate process for PDF work when AutoCAD has an incompatible PDF dependency loaded.
+$workerTarget=Join-Path $bundle 'Contents\PdfWorker'
+New-Item -ItemType Directory -Path $workerTarget -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src\CadBatch.PdfWorker\bin\Release\net48') -File | Where-Object { $_.Extension -in '.dll','.exe','.config' } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $workerTarget -Force }
+if(-not(Test-Path -LiteralPath (Join-Path $workerTarget 'CadBatch.PdfWorker.exe'))){throw 'PDF worker is missing'}
 # Single source of the version: Directory.Build.props. The manifest template carries 0.0.0.
 $manifest=(Get-Content -LiteralPath 'packaging\PackageContents.xml' -Raw -Encoding UTF8) -replace 'AppVersion="[0-9.]+"',('AppVersion="'+$version+'"') -replace '(<ComponentEntry AppName="CadBatch" )Version="[0-9.]+"',('$1Version="'+$version+'"')
 [System.IO.File]::WriteAllText((Join-Path $bundle 'PackageContents.xml'),$manifest,(New-Object System.Text.UTF8Encoding($true)))

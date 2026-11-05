@@ -214,7 +214,7 @@ namespace CadBatch.UI
         {
             if(profile.RepeatCopiesInPdf!=true)return;var group=groups.FirstOrDefault(g=>string.Equals(Path.GetFullPath(g.Path),Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase));
             if(group==null||group.Items.All(i=>i.Frame.Copies<=1))return;
-            try{CadBatch.Pdf.TargetSheetPdf.RepeatPages(path,group.Items.Select(i=>Math.Max(1,i.Frame.Copies)).ToList(),group.Items.Count>1?group.Items.Select(i=>i.Frame.Title).ToList():null);}
+            try{CadBatch.Pdf.PdfRunner.Run(CadBatch.Pdf.PdfJob.Repeat(path,group.Items.Select(i=>Math.Max(1,i.Frame.Copies)).ToArray(),group.Items.Count>1?group.Items.Select(i=>i.Frame.Title).ToArray():null));}
             catch(Exception ex){diagnostics.Add("Копии не добавлены в "+Path.GetFileName(path)+": "+ex.Message);}
         }
         // Frames of the last batch: "repeat unfinished" picks those without a finished PDF.
@@ -225,7 +225,7 @@ namespace CadBatch.UI
         {
             if(profile.Iul?.Enabled!=true)return;var group=groups.FirstOrDefault(g=>string.Equals(Path.GetFullPath(g.Path),Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase));
             var first=group?.Items.FirstOrDefault()?.Frame;string title=group==null||group.Items.Count!=1?Path.GetFileNameWithoutExtension(path):first?.Title??"";
-            try{CadBatch.Pdf.TargetSheetPdf.WriteIul(IulSheet.Describe(path,first?.Code??"",title,first?.Revision??"",profile.Iul),IulSheet.PathFor(path));}
+            try{CadBatch.Pdf.PdfRunner.Run(CadBatch.Pdf.PdfJob.Iul(path,IulSheet.PathFor(path),first?.Code??"",title,first?.Revision??"",profile.Iul));}
             catch(Exception ex){diagnostics.Add("ИУЛ не создан для "+Path.GetFileName(path)+": "+ex.Message);ErrorLog.Write("ИУЛ",ex);}
         }
         // ИУЛ for files already issued (PDF, DWG or any other document), without AutoCAD.
@@ -236,7 +236,7 @@ namespace CadBatch.UI
                 if(dialog.ShowDialog(DialogOwner)!=DialogResult.OK)return;string designation="",title="",revision="";
                 if(dialog.FileNames.Length==1){var values=AskValues("Данные для ИУЛ",("Обозначение документа (шифр)",Path.GetFileNameWithoutExtension(dialog.FileName)),("Наименование документа",Path.GetFileNameWithoutExtension(dialog.FileName)),("Номер последнего изменения","—"));if(values==null)return;designation=values[0];title=values[1];revision=values[2];}
                 var made=new List<string>();
-                foreach(string file in dialog.FileNames){string target=IulSheet.PathFor(file);CadBatch.Pdf.TargetSheetPdf.WriteIul(IulSheet.Describe(file,designation,title,revision,profile.Iul),target);made.Add(target);}
+                foreach(string file in dialog.FileNames){string target=IulSheet.PathFor(file);CadBatch.Pdf.PdfRunner.Run(CadBatch.Pdf.PdfJob.Iul(file,target,designation,title,revision,profile.Iul));made.Add(target);}
                 status.Text="Готово · ИУЛ создано: "+made.Count;LastOutputFolder=Path.GetDirectoryName(made[0]);
                 ShowText("ИУЛ созданы",string.Join(Environment.NewLine,made)+Environment.NewLine+Environment.NewLine+"Контрольная сумма — CRC32. Проверьте форму по требованиям вашей экспертизы.");
             }

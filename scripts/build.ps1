@@ -21,3 +21,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
 & (Join-Path $PSScriptRoot 'verify-net48-pdf.ps1')
 
 & (Join-Path $PSScriptRoot 'verify-net48-wpf.ps1')
+
+& (Join-Path $PSScriptRoot 'verify-net48-conflict.ps1')

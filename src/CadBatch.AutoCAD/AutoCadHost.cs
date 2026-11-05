@@ -350,7 +350,7 @@ namespace CadBatch.AutoCAD
                             {
                                 trace.Step("Точный размер кратного формата PDF",()=>
                                 {
-                                    TargetSheetPdf.RestoreCentered(temporary,cropped,paperWidth,paperHeight,media.ScaleFactor);
+                                    PdfRunner.Run(PdfJob.Restore(temporary,cropped,paperWidth,paperHeight,media.ScaleFactor));
                                     File.Delete(temporary);File.Move(cropped,temporary);
                                 });
                             }
