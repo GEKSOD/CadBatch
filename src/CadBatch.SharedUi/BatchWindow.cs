@@ -147,6 +147,8 @@ namespace CadBatch.UI
         {
             ReadProfile();status.Text="Чтение объектов и поиск рамок…";
             var result=await host.SearchAsync(profile,running!.Token);
+            var empty=result;if(result.Frames.Count==0)result=await WiderSearchAsync()??result;
+            searchedEmpty=result.Frames.Count==0;
             FrameOrder.PreserveEdits(frames,result.Frames);
             diagnostics=result.Warnings;frames.RaiseListChangedEvents=false;
             try { frames.Clear();foreach(var f in result.Frames)frames.Add(f); }
@@ -154,7 +156,42 @@ namespace CadBatch.UI
             scaleNeedsSearch=false;
             if(string.IsNullOrWhiteSpace(folder.Text)&&frames.Count>0&&Path.IsPathRooted(frames[0].Source.DocumentPath))folder.Text=Path.Combine(Path.GetDirectoryName(frames[0].Source.DocumentPath)!,"PDF");
             diagnostics.Insert(0,$"Поиск: найдено {frames.Count}, проверено контуров {result.ObjectsVisited}, совпадений {result.Duplicates}.");
-            status.Text=frames.Count==0?"Рамки не найдены. Проверьте, что чертёж открыт, и включите «Модель» или «Листы».":"Найдено листов: "+frames.Count+(diagnostics.Count>1?" · есть замечания — «Справка → Диагностика»":"");
+            if(searchedEmpty)diagnostics.AddRange(widerWarnings.Select(w=>"Расширенный поиск: "+w));
+            status.Text=frames.Count==0?"Рамки не найдены — ни при текущих, ни при расширенных настройках.":"Найдено листов: "+frames.Count+(diagnostics.Count>1?" · есть замечания — «Справка → Диагностика»":"");
+            if(frames.Count==0&&!widerDeclined)ExplainNothingFound(empty.Warnings.Concat(widerWarnings));
+        }
+        // True after a search that found nothing: the empty table then says so instead of inviting a first search.
+        private bool searchedEmpty,widerDeclined;private List<string> widerWarnings=new List<string>();
+        // Nothing found with the user's settings: search everywhere, then with the common scales, and offer to keep
+        // only the settings the found frames need. A new computer starts with "model only, scale 1".
+        private async Task<ScanResult?> WiderSearchAsync()
+        {
+            widerDeclined=false;widerWarnings=new List<string>();var original=profile.Search;
+            for(int stage=1;stage<=SearchFallback.Stages;stage++)
+            {
+                status.Text=stage==1?"Рамок нет. Ищу везде: модель, листы, блоки, отрезки, штамп…":"Пробую распространённые масштабы…";
+                ScanResult found;profile.Search=SearchFallback.Wider(original,stage);
+                try{found=await host.SearchAsync(profile,running!.Token);}finally{profile.Search=original;}
+                if(found.Frames.Count==0){widerWarnings=found.Warnings;continue;}
+                var adopted=SearchFallback.Adopt(original,found.Frames,profile.Formats,out var alternatives);var changes=SearchFallback.Changes(original,adopted);
+                if(alternatives.Count>0)changes.Add("масштаб в чертеже без штампа определён не однозначно: подходят и "+string.Join(", ",alternatives.Take(2).Select(SearchFallback.Scale))+". Проверьте форматы листов в таблице");
+                string where=string.Join(", ",found.Frames.Select(f=>string.Equals(f.Layout,"Model",StringComparison.OrdinalIgnoreCase)?"модель":"лист «"+f.Layout+"»").Distinct().Take(4));
+                string text="С текущими настройками поиска рамок нет, но с другими нашлось листов: "+found.Frames.Count+" ("+where+").\n\n"+(changes.Count>0?"Что изменится в настройках:\n• "+string.Join("\n• ",changes)+"\n\n":"")+"Показать эти листы и запомнить настройки для следующих поисков?";
+                if(ModernDialog.Actions(DialogHandle,"Рамки нашлись при других настройках",text,DialogKind.Question,"Показать и запомнить","Не надо")!=0){widerDeclined=true;return null;}
+                profile.Search=adopted;ApplyProfile();
+                try{ProfileStore.Save(profilePath,profile);}catch(Exception ex){diagnostics.Add("Настройки не сохранены: "+ex.Message);}
+                status.Text="Поиск с новыми настройками…";
+                var again=await host.SearchAsync(profile,running!.Token);
+                return again.Frames.Count>0?again:found;
+            }
+            return null;
+        }
+        private void ExplainNothingFound(IEnumerable<string> warnings)
+        {
+            string detail=warnings.Where(w=>w.StartsWith(FrameDetection.NothingFoundPrefix,StringComparison.Ordinal)).Select(w=>w.Substring(FrameDetection.NothingFoundPrefix.Length)).LastOrDefault()??"";
+            string text="CAD Batch проверил модель и все листы, полилинии, блоки, отрезки, внешние ссылки и распространённые масштабы — рамок стандартных форматов (А0–А4 и кратных) нет.\n\nЧто проверить:\n• В AutoCAD открыт и активен нужный чертёж.\n• Рамка — это замкнутая полилиния, блок или четыре отрезка точно по размеру листа.\n• Если рамка нестандартного размера, нажмите «Собрать диагностику» и отправьте файл разработчику.";
+            if(detail.Length>0)text+="\n\nЧто нашлось в чертеже: "+detail;
+            if(ModernDialog.Actions(DialogHandle,"Рамки не найдены",text,DialogKind.Info,"Понятно","Собрать диагностику")==1)CollectDiagnostics();
         }
         private async Task LocateAsync()
         {

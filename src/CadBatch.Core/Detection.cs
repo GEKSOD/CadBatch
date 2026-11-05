@@ -15,7 +15,9 @@ namespace CadBatch.Core
             if (formats.Count == 0 || formats.Any(f => !Numeric.Positive(f.WidthMm) || !Numeric.Positive(f.HeightMm))) throw new ArgumentException("Некорректный каталог форматов.");
             var result = new ScanResult();
             var stampIndex=options.Stamp?.Enabled==true?new StampScaleIndex(stampGeometry??Array.Empty<StampSegment>()):null;
-            int stampsFound=0,fallbacks=0;
+            int stampsFound=0,fallbacks=0,rectangles=0,filtered=0;
+            // The largest rectangles that matched no format: they tell what is wrong when nothing is found.
+            var misses=new List<Rectangle2>();
             var identities = new HashSet<string>(StringComparer.Ordinal);
             // Spatial buckets avoid a quadratic search through all detected frames.
             var buckets = new Dictionary<string,List<DetectedFrame>>(StringComparer.Ordinal);
@@ -24,8 +26,9 @@ namespace CadBatch.Core
             {
                 cancellation.ThrowIfCancellationRequested();
                 result.ObjectsVisited++;
-                if (!Wildcard(c.Layer,options.LayerPattern) || (!string.IsNullOrEmpty(c.BlockName) && !Wildcard(c.BlockName,options.BlockPattern))) continue;
+                if (!Wildcard(c.Layer,options.LayerPattern) || (!string.IsNullOrEmpty(c.BlockName) && !Wildcard(c.BlockName,options.BlockPattern))) { filtered++; continue; }
                 if (!Rectangle2.TryCreate(c.Vertices, options.GeometryTolerance, out var geometry)) continue;
+                rectangles++;
                 StampScaleEvidence? evidence=null;IEnumerable<double> scales=options.Scales;
                 if(stampIndex!=null)
                 {
@@ -49,7 +52,7 @@ namespace CadBatch.Core
                             { best = error; match = f; scale = s; }
                         }
                     }
-                if (match == null) continue;
+                if (match == null) { Remember(misses,geometry!); continue; }
                 if (!identities.Add(c.Key)) { result.Duplicates++; continue; }
                 long bx = (long)Math.Floor(geometry!.Center.X / bucketSize), by = (long)Math.Floor(geometry.Center.Y / bucketSize);
                 DetectedFrame? overlap = null;
@@ -85,8 +88,22 @@ namespace CadBatch.Core
                 return v;
             });
             for (int i=0;i<result.Frames.Count;i++) result.Frames[i].Page = i+1;
+            if(result.Frames.Count==0)result.Warnings.Add(NothingFound(rectangles,filtered,misses,options));
             if(stampIndex!=null&&(fallbacks>0||stampsFound==0))result.Warnings.Add("Масштаб по штампу подтверждён у рамок: "+stampsFound+"; использован список масштабов: "+fallbacks+". Проверьте параметры штампа и колонку «Источник масштаба».");
             return result;
+        }
+        private static void Remember(List<Rectangle2> misses,Rectangle2 r)
+        {
+            if(misses.Any(m=>Math.Abs(m.Width-r.Width)<1e-6&&Math.Abs(m.Height-r.Height)<1e-6))return;
+            misses.Add(r);misses.Sort((a,b)=>(b.Width*b.Height).CompareTo(a.Width*a.Height));if(misses.Count>5)misses.RemoveAt(5);
+        }
+        public const string NothingFoundPrefix="Рамки не найдены: ";
+        private static string NothingFound(int rectangles,int filtered,List<Rectangle2> misses,SearchOptions options)
+        {
+            var culture=System.Globalization.CultureInfo.CurrentCulture;
+            string text=NothingFoundPrefix+"замкнутых прямоугольников — "+rectangles+(filtered>0?", отброшено по маске слоя или блока — "+filtered:"")+"; "+(options.Scales.Count>6?"проверено масштабов — "+options.Scales.Count:"масштабы: "+string.Join("; ",options.Scales.Select(s=>s.ToString("0.###",culture))))+".";
+            if(misses.Count>0)text+=" Самые крупные прямоугольники (единиц DWG): "+string.Join(", ",misses.Select(m=>Math.Max(m.Width,m.Height).ToString("0.##",culture)+" × "+Math.Min(m.Width,m.Height).ToString("0.##",culture)))+".";
+            return text;
         }
         private static string Bucket(FrameCandidate c,long x,long y) => c.DocumentKey + "|" + c.Layout + "|" + x + ":" + y;
         public static string ReadAttribute(FrameCandidate c,params string[] names)

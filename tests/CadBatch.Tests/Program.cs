@@ -176,8 +176,8 @@ internal static partial class Program
             Run("Unclosed naming token rejected",()=>Throws<ArgumentException>(()=>OutputPlanner.Build(Detect(Candidate("A",0,0,420,297)).Frames,temp,"{Page")));
             Run("Profile roundtrip and backup",()=>
             {
-                string path=Path.Combine(temp,"profile.json");var p=new ProjectProfile();p.Search.Scales.Add(100);ProfileStore.Save(path,p);
-                Assert(ProfileStore.Load(path).Search.Scales.SequenceEqual(new double[]{1,100}));p.FilePattern="{Title}";ProfileStore.Save(path,p);
+                string path=Path.Combine(temp,"profile.json");var p=new ProjectProfile();p.Search.Scales.Add(50);ProfileStore.Save(path,p);
+                Assert(ProfileStore.Load(path).Search.Scales.SequenceEqual(new double[]{1,100,50}));p.FilePattern="{Title}";ProfileStore.Save(path,p);
                 Assert(File.Exists(path+".bak"));Assert(ProfileStore.Load(path+".bak").FilePattern!="{Title}");
             });
             Run("Unknown schema rejected",()=>{var p=new ProjectProfile{SchemaVersion=42};Throws<ArgumentException>(()=>ProfileStore.Save(Path.Combine(temp,"bad.json"),p));});
@@ -223,6 +223,7 @@ internal static partial class Program
         RunApplicationTests();
         RunImportTests();
         RunReleaseToolsTests();
+        RunSearchFallbackTests();
         Run("500-frame synthetic corpus",()=>
         {
             var candidates=Enumerable.Range(0,500).Select(i=>Candidate(i.ToString(),i%25*500,i/25*400,420,297)).ToList();

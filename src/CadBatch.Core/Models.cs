@@ -32,7 +32,7 @@ namespace CadBatch.Core
         [DataMember(EmitDefaultValue=false)] public List<string>? Files {get;set;}
         [DataMember(EmitDefaultValue=false)] public SearchRegion? Region {get;set;}
         [DataMember] public bool Model { get; set; } = true;
-        [DataMember] public bool Layouts { get; set; }
+        [DataMember] public bool Layouts { get; set; } = true;
         [DataMember] public bool AllOpenDocuments { get; set; }
         [DataMember] public bool Polylines { get; set; } = true;
         [DataMember] public bool Blocks { get; set; } = true;
@@ -43,7 +43,7 @@ namespace CadBatch.Core
         [DataMember] public bool ActiveLayoutOnly { get; set; }
         [DataMember] public string LayerPattern { get; set; } = "*";
         [DataMember] public string BlockPattern { get; set; } = "*";
-        [DataMember] public List<double> Scales { get; set; } = new List<double> { 1 };
+        [DataMember] public List<double> Scales { get; set; } = new List<double> { 1, 100 };
         [DataMember] public double SizeToleranceMm { get; set; } = 2;
         [DataMember] public double GeometryTolerance { get; set; } = 0.01;
         [DataMember(EmitDefaultValue=false)] public StampScaleSettings? Stamp {get;set;}

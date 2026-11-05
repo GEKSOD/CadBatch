@@ -223,7 +223,9 @@ namespace CadBatch.UI
                 var stack=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,MaxWidth=440,Margin=new Thickness(24)};
                 stack.Children.Add(new Border{Width=76,Height=76,CornerRadius=new CornerRadius(38),Background=UiTheme.AccentSoft,Margin=new Thickness(0,0,0,20),Child=new TextBlock{Text=UiTheme.IconSearch,FontFamily=UiTheme.Icons,FontSize=32,Foreground=UiTheme.Accent,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}});
                 var title=UiTheme.Title("Листов пока нет",24);title.HorizontalAlignment=HorizontalAlignment.Center;stack.Children.Add(title);
-                var text=UiTheme.Text(demo?"Это демо-режим. Нажмите «Найти рамки», чтобы посмотреть, как выглядят найденные листы.":"Откройте чертёж в AutoCAD и нажмите «Найти рамки». Найденные листы появятся здесь.",16,null,UiTheme.Secondary);
+                string firstText=demo?"Это демо-режим. Нажмите «Найти рамки», чтобы посмотреть, как выглядят найденные листы.":"Откройте чертёж в AutoCAD и нажмите «Найти рамки». Найденные листы появятся здесь.";
+                var text=UiTheme.Text(firstText,16,null,UiTheme.Secondary);
+                bool? shownEmpty=null;refresh.Add(()=>{if(shownEmpty==c.searchedEmpty)return;shownEmpty=c.searchedEmpty;title.Text=c.searchedEmpty?"Рамки не найдены":"Листов пока нет";text.Text=c.searchedEmpty?"В открытом чертеже нет рамок стандартных форматов. Проверьте, что в AutoCAD активен нужный чертёж, и нажмите «Найти рамки» ещё раз.":firstText;});
                 text.TextAlignment=TextAlignment.Center;text.Margin=new Thickness(0,10,0,22);text.LineHeight=23;stack.Children.Add(text);
                 var find=UiTheme.Button("Найти рамки",UiTheme.IconSearch,"Primary");find.HorizontalAlignment=HorizontalAlignment.Center;find.Height=50;find.FontSize=16;find.MinWidth=220;find.Click+=async(s,e)=>await FindAsync();stack.Children.Add(find);stack.Children.Add(recent);
                 emptyState.Child=stack;emptyState.Background=UiTheme.Surface;emptyState.CornerRadius=new CornerRadius(14);emptyState.BorderBrush=UiTheme.Line;emptyState.BorderThickness=new Thickness(1);
@@ -715,6 +717,38 @@ namespace CadBatch.UI
                 table.Focus();UpdateLayout();if(SelectedRowForeground().StartsWith("#FFFFFFFF",StringComparison.Ordinal))throw new InvalidOperationException("WPF smoke: selected row text is white.");
                 RenderTo(path);
                 File.WriteAllText(path+".txt","WPF + ModernWpf smoke PASS: 12 frames, six menus, editable grid, PDF modes/names, selected frame, scoped theme. CAD output disabled in demo.");
+            }
+            // Smoke: a computer with old settings. With frames on a layout at 1:100 the window offers wider settings and keeps
+            // them; with no standard frames at all it explains why. The dialog is captured and answered with its first button.
+            public async Task FallbackSmokeAsync(string folder,bool nothing,string settingsPath)
+            {
+                string name=nothing?"nothing":"fallback";string? dialogText=null;
+                var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(300)};
+                timer.Tick+=(s,e)=>
+                {
+                    var sheet=Application.Current.Windows.OfType<Window>().FirstOrDefault(w=>w!=this&&w.IsVisible);if(sheet==null)return;timer.Stop();
+                    sheet.UpdateLayout();UiTheme.Snapshot((FrameworkElement)sheet.Content,Path.Combine(folder,name+"-dialog.png"));
+                    dialogText=string.Join("\n",Descendants<TextBlock>(sheet).Select(t=>t.Text));
+                    var primary=Descendants<WButton>(sheet).First(b=>Descendants<TextBlock>(b).Any(t=>t.Text==(nothing?"Понятно":"Показать и запомнить"))||b.Content as string==(nothing?"Понятно":"Показать и запомнить"));
+                    ((System.Windows.Automation.Provider.IInvokeProvider)new System.Windows.Automation.Peers.ButtonAutomationPeer(primary).GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke)).Invoke();
+                };
+                timer.Start();
+                try{await Execute(c.ScanAsync);}finally{timer.Stop();}
+                Sync();UpdateLayout();await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+                if(dialogText==null)throw new InvalidOperationException("Fallback smoke: no dialog was shown.");
+                var saved=ProfileStore.Load(settingsPath);
+                if(nothing)
+                {
+                    if(c.frames.Count!=0||!c.searchedEmpty||!dialogText.Contains("Самые крупные прямоугольники")||saved.Search.Layouts)throw new InvalidOperationException("Nothing smoke: wrong result.\n"+dialogText);
+                }
+                else if(c.frames.Count!=12||!c.layouts.Checked||!c.profile.Search.Scales.Contains(100)||!saved.Search.Layouts||!saved.Search.Scales.Contains(100)||!dialogText.Contains("добавить масштаб 1:100"))
+                    throw new InvalidOperationException("Fallback smoke: wider settings were not applied. Frames: "+c.frames.Count+"\n"+dialogText);
+                RenderTo(Path.Combine(folder,name+".png"));
+                File.WriteAllText(Path.Combine(folder,name+".txt"),(nothing?"NOTHING SMOKE PASS: the window explains that no frames exist and names the largest rectangles.":"FALLBACK SMOKE PASS: old settings found nothing; the wider search found 12 frames on a layout at 1:100, the user accepted, settings were saved.")+"\n\n"+dialogText);
+            }
+            private static IEnumerable<T> Descendants<T>(DependencyObject node) where T:DependencyObject
+            {
+                for(int i=0;i<VisualTreeHelper.GetChildrenCount(node);i++){var child=VisualTreeHelper.GetChild(node,i);if(child is T found)yield return found;foreach(var deeper in Descendants<T>(child))yield return deeper;}
             }
             // Smoke support: switch mode and text size without touching the user's saved preferences file.
             public void PreviewLook(bool advanced,double scale){prefs.Advanced=advanced;prefs.TextScale=scale;ApplyMode();ApplyScale();UpdateLayout();Relayout();UpdateLayout();}

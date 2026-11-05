@@ -62,6 +62,15 @@ namespace CadBatch.Desktop
                     look.PreviewLook(false,1.3);await look.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);look.RenderTo(Path.Combine(args[1],"large.png"));}
                     catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"look.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{look.Close();}};app.Run(look);return;
             }
+            if(args.Length==2&&(args[0]=="--fallback-smoke"||args[0]=="--nothing-smoke"))
+            {
+                // A computer with the old settings (model only, scale 1): the window must search wider by itself.
+                bool nothing=args[0]=="--nothing-smoke";Directory.CreateDirectory(args[1]);string settingsPath=Path.Combine(args[1],nothing?"nothing-profile.json":"fallback-profile.json");
+                var old=new ProjectProfile();old.Search.Layouts=false;old.Search.Scales=new List<double>{1};ProfileStore.Save(settingsPath,old);
+                var smoke=new BatchWindow.FluentWindow(new DemoHost(nothing?"nothing":"layout100"),settingsPath){ShowIntroOnStart=false};
+                smoke.ContentRendered+=async(s,e)=>{try{await smoke.FallbackSmokeAsync(args[1],nothing,settingsPath);}catch(Exception ex){File.WriteAllText(Path.Combine(args[1],(nothing?"nothing":"fallback")+".error.txt"),ex.ToString());Environment.ExitCode=1;}finally{smoke.Close();}};
+                app.Run(smoke);return;
+            }
             if(args.Length==2&&args[0]=="--empty-smoke")
             {
                 var empty=new BatchWindow.FluentWindow(new DemoHost(),Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!,"empty-profile.json")){ShowIntroOnStart=false};
@@ -83,6 +92,10 @@ namespace CadBatch.Desktop
     }
     internal sealed class DemoHost : IBatchHost
     {
+        // Smoke variants that honour the search settings like AutoCAD does:
+        // "layout100" — frames on a layout tab drawn at 1:100; "nothing" — rectangles of no standard size.
+        private readonly string variant;
+        public DemoHost(string variant=""){this.variant=variant;}
         public string Description=>"ДЕМОНСТРАЦИЯ ИНТЕРФЕЙСА • AutoCAD не подключён • тестовые данные";
         public bool CanPlot=>false;
         public Task<string[]> GetLayoutNamesAsync()=>Task.FromResult(Array.Empty<string>());
@@ -103,6 +116,13 @@ namespace CadBatch.Desktop
                     Vertices=new List<Point2> { new Point2(x,y),new Point2(x+f.WidthMm,y),new Point2(x+f.WidthMm,y+f.HeightMm),new Point2(x,y+f.HeightMm) },
                     Attributes=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase) { ["SHEET"]=(i+1).ToString(),["TITLE"]=i==0?"Общие данные":"План. Разрез. Узлы — лист "+(i+1),["CODE"]="АР-01" }
                 });
+            }
+            if(variant.Length>0)
+            {
+                double factor=variant=="layout100"?100:1.37;
+                foreach(var c in candidates){c.Layout=variant=="layout100"?"3.Вертикалка":"Model";c.Vertices=c.Vertices.Select(p=>new Point2(p.X*factor,p.Y*factor)).ToList();}
+                if(!profile.Search.Layouts)candidates.RemoveAll(c=>c.Layout!="Model");if(!profile.Search.Model)candidates.RemoveAll(c=>c.Layout=="Model");
+                return Task.Run(()=>FrameDetection.Detect(candidates,profile.Search,formats,cancellation),cancellation);
             }
             // Demo uses the same detection kernel, with a fixed deterministic sample catalog.
             return Task.Run(()=>FrameDetection.Detect(candidates,new SearchOptions(),formats,cancellation),cancellation);
