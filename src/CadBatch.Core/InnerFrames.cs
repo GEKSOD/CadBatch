@@ -25,14 +25,17 @@ namespace CadBatch.Core
             }
             return (match,chosen);
         }
-        // The sheet around an inner frame at the given scale (drawing units per paper millimetre).
-        public static Rectangle2 Expand(Rectangle2 inner,double scale)
+        // The sheet around an inner frame at the given scale (drawing units per paper millimetre). It is built as an exact
+        // rectangle from the bottom side of the frame, its direction and its size: an inner frame drawn slightly out of
+        // square (within the search tolerance) must not stop the search. Null when no sheet can be built.
+        public static Rectangle2? Expand(Rectangle2 inner,double scale)
         {
+            if(!Numeric.Positive(scale)||!Numeric.Positive(inner.Width)||!Numeric.Positive(inner.Height))return null;
             var c=inner.Corners;var u=(c[1]-c[0])*(1/inner.Width);var v=new Point2(-u.Y,u.X);
-            double left=LeftMm*scale,margin=MarginMm*scale;
-            var points=new[]{c[0]-u*left-v*margin,c[1]+u*margin-v*margin,c[2]+u*margin+v*margin,c[3]-u*left+v*margin};
-            if(!Rectangle2.TryCreate(points,Math.Max(1e-9,inner.Width*1e-9),out var sheet))throw new InvalidOperationException("Не удалось построить лист по внутренней рамке.");
-            return sheet!;
+            double width=inner.Width+(LeftMm+MarginMm)*scale,height=inner.Height+2*MarginMm*scale;
+            var start=c[0]-u*(LeftMm*scale)-v*(MarginMm*scale);
+            var points=new[]{start,start+u*width,start+u*width+v*height,start+v*height};
+            return Rectangle2.TryCreate(points,Math.Max(1e-6,Math.Max(width,height)*1e-9),out var sheet)?sheet:null;
         }
     }
 }

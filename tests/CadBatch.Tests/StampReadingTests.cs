@@ -55,6 +55,18 @@ internal static partial class Program
             Assert(Math.Abs(sheet.Corners[0].X-14223295)<3&&Math.Abs(sheet.Corners[0].Y-5577587)<3&&Math.Abs(sheet.Corners[2].X-14312393)<3&&Math.Abs(sheet.Corners[2].Y-5619584)<3);
             Assert(Math.Abs(found.Single(f=>f.FormatName=="А3×3").WidthMm-891)<0.1);
         });
+        Run("An inner frame drawn slightly out of square gives an exact sheet and never stops the search",()=>
+        {
+            // ИТП500 СОШ93: "Не удалось построить лист по внутренней рамке" stopped the whole search. A corner off by
+            // 0.004 units is within the search tolerance (0.01) but not a perfect rectangle.
+            var skewed=Candidate("S",1000,2000,39500,28700);skewed.Vertices[2]=new Point2(skewed.Vertices[2].X+0.004,skewed.Vertices[2].Y);
+            var tidy=Candidate("T",60000,2000,39500,28700);
+            var found=FrameDetection.Detect(new[]{skewed,tidy},new SearchOptions{Scales=new List<double>{100}},FormatDefinition.Defaults(),System.Threading.CancellationToken.None).Frames;
+            Assert(found.Count==2&&found.All(f=>f.FormatName=="А3"));
+            var sheet=found.Single(f=>f.Source.HandlePath=="S").Geometry;
+            Assert(Math.Abs(sheet.Width-42000)<0.05&&Math.Abs(sheet.Height-29700)<0.05&&Math.Abs(sheet.Corners[0].X-(1000-2000))<0.05);
+            Assert(InnerFrames.Expand(sheet,0)==null);
+        });
         Run("An inner frame next to its drawn sheet edge does not make a second sheet",()=>
         {
             var outer=Candidate("O",0,0,420,297);var innerFrame=Candidate("I",20.3,5.2,395,287);

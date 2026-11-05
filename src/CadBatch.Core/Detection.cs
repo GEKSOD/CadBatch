@@ -46,7 +46,8 @@ namespace CadBatch.Core
                     if(c.GeometryKind!="Lines"&&c.GeometryKind!="Exploded")
                     {
                         var (innerFormat,innerScale)=InnerFrames.Match(geometry!,options.Scales,formats,options.SizeToleranceMm);
-                        if(innerFormat!=null){inner.Add((c,InnerFrames.Expand(geometry!,innerScale),innerFormat,innerScale));continue;}
+                        var sheet=innerFormat!=null?InnerFrames.Expand(geometry!,innerScale):null;
+                        if(sheet!=null){inner.Add((c,sheet,innerFormat!,innerScale));continue;}
                     }
                     Remember(misses,geometry!);continue;
                 }

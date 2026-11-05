@@ -194,7 +194,7 @@ namespace CadBatch.AutoCAD
             },frame);
             // A sheet found by its inner ГОСТ frame: the outline is the inner frame, the sheet is that frame plus the margins.
             if(rectangle!=null&&!frame.Geometry.SameBoundary(rectangle,.02)&&frame.Source.GeometryKind!="Lines"&&frame.Source.GeometryKind!="Exploded")
-            {var sheet=InnerFrames.Expand(rectangle,frame.Scale);if(frame.Geometry.SameBoundary(sheet,.02))rectangle=sheet;}
+            {var sheet=InnerFrames.Expand(rectangle,frame.Scale);if(sheet!=null&&frame.Geometry.SameBoundary(sheet,.02))rectangle=sheet;}
             if(rectangle==null||!frame.Geometry.SameBoundary(rectangle,.02))throw new InvalidOperationException("Геометрия рамки изменилась. Повторите поиск.");
             ValidateStampEvidence(doc,frame,tr);return rectangle;
         }
