@@ -99,6 +99,17 @@ internal static partial class Program
             var adopted=SearchFallback.Adopt(original,found,formats);
             Assert(adopted.Scales.SequenceEqual(new double[]{100})&&SearchFallback.Explained(adopted,found,formats).Count==1);
         });
+        Run("Sheets already found set the size; the missing ones at another scale are offered alone",()=>
+        {
+            // 11210.21-КР: sheets confirmed at 1:1 by the list, inner frames that need 1:100, and a table at an odd scale.
+            var formats=FormatDefinition.Defaults();var original=new SearchOptions{Scales=new List<double>{1}};
+            var known=FrameDetection.Detect(new[]{Candidate("K",0,0,841,594)},original,formats,CancellationToken.None).Frames;
+            var wider=FrameDetection.Detect(new[]{Candidate("K",0,0,841,594),Candidate("I",100000,0,86599.18,40997.72),Candidate("T",300000,0,210.25,74.25)},SearchFallback.Wider(original,2),formats,CancellationToken.None).Frames;
+            var extra=wider.Where(f=>!known.Any(k=>k.Geometry.SameBoundary(f.Geometry,.01))).ToList();
+            Assert(extra.Count==2);
+            var adopted=SearchFallback.Adopt(original,known.Concat(extra).ToList(),formats);var shown=SearchFallback.Explained(adopted,extra,formats);
+            Assert(adopted.Scales.SequenceEqual(new double[]{1,100})&&shown.Count==1&&shown[0].FormatName=="А3×3");
+        });
         Run("Drawings in metres are named so",()=>
         {
             Assert(SearchFallback.Scale(100)=="1:100"&&SearchFallback.Scale(0.1)=="1:100 (чертёж в метрах)"&&SearchFallback.Scale(1)=="1:1");

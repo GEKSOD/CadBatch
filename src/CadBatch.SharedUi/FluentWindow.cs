@@ -734,7 +734,7 @@ namespace CadBatch.UI
             // them; with no standard frames at all it explains why. The dialog is captured and answered with its first button.
             public async Task FallbackSmokeAsync(string folder,string mode,string settingsPath)
             {
-                bool nothing=mode=="nothing",missed=mode=="missed";string name=mode;string? dialogText=null;
+                bool nothing=mode=="nothing",missed=mode=="missed"||mode=="scale";string name=mode;string? dialogText=null;
                 string accept=nothing?"Понятно":missed?"Добавить и запомнить":"Показать и запомнить";
                 var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(300)};
                 timer.Tick+=(s,e)=>
@@ -756,12 +756,14 @@ namespace CadBatch.UI
                 }
                 else if(missed)
                 {
-                    if(c.frames.Count!=12||!c.profile.Search.Lines||!saved.Search.Lines||!dialogText.Contains("Ещё 6 рамок")||!dialogText.Contains("отдельных отрезков"))throw new InvalidOperationException("Missed smoke: frames drawn with lines were not added. Frames: "+c.frames.Count+"\n"+dialogText);
+                    bool byScale=mode=="scale";
+                    if(c.frames.Count!=12||!dialogText.Contains("Ещё 6 рамок")||(byScale?!saved.Search.Scales.Contains(100)||!dialogText.Contains("добавить масштаб 1:100"):!c.profile.Search.Lines||!saved.Search.Lines||!dialogText.Contains("отдельных отрезков")))
+                        throw new InvalidOperationException("Missed smoke ("+mode+"): the missing sheets were not added. Frames: "+c.frames.Count+"\n"+dialogText);
                 }
                 else if(c.frames.Count!=12||!c.layouts.Checked||!c.profile.Search.Scales.Contains(100)||!saved.Search.Layouts||!saved.Search.Scales.Contains(100)||!dialogText.Contains("добавить масштаб 1:100"))
                     throw new InvalidOperationException("Fallback smoke: wider settings were not applied. Frames: "+c.frames.Count+"\n"+dialogText);
                 RenderTo(Path.Combine(folder,name+".png"));
-                File.WriteAllText(Path.Combine(folder,name+".txt"),(nothing?"NOTHING SMOKE PASS: the window explains that no frames exist and names the largest rectangles.":missed?"MISSED SMOKE PASS: 6 frames found; the check found 6 more drawn with lines, the user added them, settings were saved.":"FALLBACK SMOKE PASS: old settings found nothing; the wider search found 12 frames on a layout at 1:100, the user accepted, settings were saved.")+"\n\n"+dialogText);
+                File.WriteAllText(Path.Combine(folder,name+".txt"),(nothing?"NOTHING SMOKE PASS: the window explains that no frames exist and names the largest rectangles.":mode=="scale"?"SCALE SMOKE PASS: 6 sheets found; the check found 6 more at 1:100 in its second stage, the user added them and the scale was saved.":missed?"MISSED SMOKE PASS: 6 frames found; the check found 6 more drawn with lines, the user added them, settings were saved.":"FALLBACK SMOKE PASS: old settings found nothing; the wider search found 12 frames on a layout at 1:100, the user accepted, settings were saved.")+"\n\n"+dialogText);
             }
             // Smoke: "find in selection" finds only the selected sheets and is not remembered; sorting by sheet number is kept
             // for the next search and shown by the order list.

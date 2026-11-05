@@ -209,15 +209,24 @@ namespace CadBatch.UI
         private readonly HashSet<string> missedChecked=new HashSet<string>(StringComparer.Ordinal);
         private async Task<ScanResult?> MissedFramesAsync(ScanResult current)
         {
-            var original=profile.Search;var wider=SearchFallback.Wider(original,1);
-            if(SearchFallback.Signature(wider)==SearchFallback.Signature(original))return null;
+            var original=profile.Search;
             string key=SearchFallback.Signature(original)+"#"+string.Join(",",current.Frames.Select(f=>f.Source.DocumentKey).Distinct(StringComparer.Ordinal).OrderBy(k=>k,StringComparer.Ordinal));
             if(!missedChecked.Add(key))return null;
-            status.Text="Найдено листов: "+current.Frames.Count+". Проверяю, не пропущены ли другие рамки…";
-            var found=await SearchWithAsync(wider);if(found==null)return null;
-            var extra=found.Frames.Where(f=>!current.Frames.Any(c=>c.Source.DocumentKey==f.Source.DocumentKey&&c.Layout==f.Layout&&c.Geometry.SameBoundary(f.Geometry,Math.Max(original.GeometryTolerance,.01)))).ToList();
-            if(extra.Count==0)return null;
-            return await OfferAsync(original,extra,shown=>"Найдено листов: "+current.Frames.Count+". Ещё "+shown.Count+" рамок текущие настройки пропускают ("+Where(shown)+").","Найдены ещё рамки","Добавить и запомнить",null);
+            // Stage 1: everywhere with the user's scales; stage 2: also the common scales. A drawing whose sheets are
+            // partly confirmed by title blocks (1:100) and partly have only an inner frame needs the second stage.
+            for(int stage=1;stage<=SearchFallback.Stages;stage++)
+            {
+                var wider=SearchFallback.Wider(original,stage);
+                if(SearchFallback.Signature(wider)==SearchFallback.Signature(original))continue;
+                status.Text="Найдено листов: "+current.Frames.Count+". Проверяю, не пропущены ли другие рамки…";
+                var found=await SearchWithAsync(wider);if(found==null)continue;
+                var extra=found.Frames.Where(f=>!current.Frames.Any(c=>c.Source.DocumentKey==f.Source.DocumentKey&&c.Layout==f.Layout&&c.Geometry.SameBoundary(f.Geometry,Math.Max(original.GeometryTolerance,.01)))).ToList();
+                if(extra.Count==0)continue;
+                widerDeclined=false;
+                var offered=await OfferAsync(original,extra,shown=>"Найдено листов: "+current.Frames.Count+". Ещё "+shown.Count+" рамок текущие настройки пропускают ("+Where(shown)+").","Найдены ещё рамки","Добавить и запомнить",null,current.Frames);
+                if(offered!=null||widerDeclined)return offered;
+            }
+            return null;
         }
         // A search with other settings; its failure (a busy plan, a broken object) never spoils the main result.
         private async Task<ScanResult?> SearchWithAsync(SearchOptions options)
@@ -229,9 +238,10 @@ namespace CadBatch.UI
         }
         private static string Where(IEnumerable<DetectedFrame> found)=>string.Join(", ",found.Select(f=>string.Equals(f.Layout,"Model",StringComparison.OrdinalIgnoreCase)?"модель":"лист «"+f.Layout+"»").Distinct().Take(4));
         // Asks to keep the settings the given frames need; on yes searches again with them.
-        private async Task<ScanResult?> OfferAsync(SearchOptions original,IReadOnlyCollection<DetectedFrame> needed,Func<List<DetectedFrame>,string> leadFor,string title,string accept,ScanResult? fallback)
+        // known: sheets already found; they show the size a real sheet has, so tiny rectangles at odd scales are not offered.
+        private async Task<ScanResult?> OfferAsync(SearchOptions original,IReadOnlyCollection<DetectedFrame> needed,Func<List<DetectedFrame>,string> leadFor,string title,string accept,ScanResult? fallback,IReadOnlyCollection<DetectedFrame>? known=null)
         {
-            var adopted=SearchFallback.Adopt(original,needed,profile.Formats,out var alternatives);var changes=SearchFallback.Changes(original,adopted);
+            var adopted=SearchFallback.Adopt(original,known==null?needed:known.Concat(needed).ToList(),profile.Formats,out var alternatives);var changes=SearchFallback.Changes(original,adopted);
             // Small rectangles that fit only at odd scales are not offered; nothing left means nothing to ask about.
             var shown=SearchFallback.Explained(adopted,needed,profile.Formats);if(shown.Count==0||changes.Count==0)return null;
             string lead=leadFor(shown);

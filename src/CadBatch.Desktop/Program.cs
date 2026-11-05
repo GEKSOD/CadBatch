@@ -69,7 +69,7 @@ namespace CadBatch.Desktop
                 smoke.ContentRendered+=async(s,e)=>{try{await smoke.SelectionSmokeAsync(args[1]);}catch(Exception ex){File.WriteAllText(Path.Combine(args[1],"selection.error.txt"),ex.ToString());Environment.ExitCode=1;}finally{smoke.Close();}};
                 app.Run(smoke);return;
             }
-            if(args.Length==2&&(args[0]=="--fallback-smoke"||args[0]=="--nothing-smoke"||args[0]=="--missed-smoke"))
+            if(args.Length==2&&(args[0]=="--fallback-smoke"||args[0]=="--nothing-smoke"||args[0]=="--missed-smoke"||args[0]=="--scale-smoke"))
             {
                 // A computer with the old settings (model only, scale 1): the window must search wider by itself.
                 string mode=args[0].Substring(2,args[0].Length-8);Directory.CreateDirectory(args[1]);string settingsPath=Path.Combine(args[1],mode+"-profile.json");
@@ -129,10 +129,12 @@ namespace CadBatch.Desktop
             var chosen=profile.Search.Selection?.HandleSet();if(chosen!=null)candidates.RemoveAll(c=>!chosen.Contains(c.HandlePath));
             if(variant.Length>0)
             {
-                double factor=variant=="layout100"?100:variant=="missed"?1:1.37;
+                double factor=variant=="layout100"?100:variant=="missed"||variant=="scale"?1:1.37;
                 foreach(var c in candidates){c.Layout=variant=="layout100"?"3.Вертикалка":"Model";c.Vertices=c.Vertices.Select(p=>new Point2(p.X*factor,p.Y*factor)).ToList();}
                 // "missed": every second frame is drawn with separate lines and is seen only when lines are searched.
                 if(variant=="missed"){for(int i=1;i<candidates.Count;i+=2){candidates[i].GeometryKind="Lines";candidates[i].Kind="Отрезки";}if(!profile.Search.Lines)candidates.RemoveAll(c=>c.GeometryKind=="Lines");}
+                // "scale": every second sheet is drawn at 1:100 and is found only when that scale is searched.
+                if(variant=="scale")for(int i=1;i<candidates.Count;i+=2)candidates[i].Vertices=candidates[i].Vertices.Select(p=>new Point2(p.X*100,p.Y*100-500000)).ToList();
                 if(!profile.Search.Layouts)candidates.RemoveAll(c=>c.Layout!="Model");if(!profile.Search.Model)candidates.RemoveAll(c=>c.Layout=="Model");
                 return Task.Run(()=>FrameDetection.Detect(candidates,profile.Search,formats,cancellation),cancellation);
             }
