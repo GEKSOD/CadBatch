@@ -7,6 +7,7 @@
     <UseWPF>true</UseWPF>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../packaging/icon/CadBatch.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../CadBatch.Updates/CadBatch.Updates.csproj" />
@@ -15,5 +16,6 @@
     <ProjectReference Include="../CadBatch.Transport/CadBatch.Transport.csproj" />
     <ProjectReference Include="../CadBatch.Pdf/CadBatch.Pdf.csproj" />
     <Compile Include="../CadBatch.SharedUi/*.cs" Link="UI/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../CadBatch.SharedUi/Assets/logo.png" LogicalName="CadBatch.Logo.png" />
   </ItemGroup>
 </Project>

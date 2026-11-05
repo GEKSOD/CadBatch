@@ -81,6 +81,31 @@ namespace CadBatch.UI
             var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth),(int)Math.Ceiling(element.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(visual);
             var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));using(var file=System.IO.File.Create(path))encoder.Save(file);
         }
+        // The product logo, embedded in the application and in the AutoCAD component; the old tile is the fallback.
+        private static ImageSource? logo;private static bool logoTried;
+        public static ImageSource? LogoSource
+        {
+            get
+            {
+                if(logoTried)return logo;logoTried=true;
+                try
+                {
+                    using(var stream=typeof(UiTheme).Assembly.GetManifestResourceStream("CadBatch.Logo.png"))
+                    {
+                        if(stream==null)return null;var image=new System.Windows.Media.Imaging.BitmapImage();image.BeginInit();image.CacheOption=System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;image.StreamSource=stream;image.EndInit();image.Freeze();logo=image;
+                    }
+                }
+                catch(Exception){logo=null;}
+                return logo;
+            }
+        }
+        public static FrameworkElement Logo(double size)
+        {
+            if(LogoSource!=null){var image=new System.Windows.Controls.Image{Source=LogoSource,Width=size,Height=size,VerticalAlignment=VerticalAlignment.Center};RenderOptions.SetBitmapScalingMode(image,BitmapScalingMode.HighQuality);return image;}
+            var glyph=Icon(IconDocument,size*0.5,OnAccent);glyph.HorizontalAlignment=HorizontalAlignment.Center;
+            return new Border{Width=size,Height=size,CornerRadius=new CornerRadius(size*0.28),Background=new LinearGradientBrush(Color.FromRgb(10,132,255),Color.FromRgb(0,98,204),90),Child=glyph,VerticalAlignment=VerticalAlignment.Center};
+        }
+        public static void UseLogo(Window window){if(LogoSource!=null)window.Icon=LogoSource;}
         public static Border Separator()=>new Border{Height=1,Background=Line,Margin=new Thickness(0)};
 
         private const string ContrastXaml=@"<ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' xmlns:ui='http://schemas.modernwpf.com/2019'>

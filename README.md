@@ -1,3 +1,5 @@
+<p align="center"><img src="packaging/icon/logo-512.png" width="128" alt="CAD Batch"></p>
+
 # CAD Batch
 
 Приложение Windows, которое находит рамки листов в чертежах AutoCAD и выводит их в PDF — пачкой, в три шага.

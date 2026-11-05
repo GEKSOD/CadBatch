@@ -83,7 +83,7 @@ namespace CadBatch.UI
                 prefsPath=Path.Combine(Path.GetDirectoryName(c.profilePath)!,"interface.json");prefs=UiPreferences.Load(prefsPath);ModernDialog.TextScale=prefs.TextScale;
                 Title="CAD Batch";Width=Math.Min(1600,SystemParameters.WorkArea.Width-40);Height=Math.Min(1000,SystemParameters.WorkArea.Height-40);MinWidth=Math.Min(1000,SystemParameters.WorkArea.Width-24);MinHeight=Math.Min(660,SystemParameters.WorkArea.Height-32);WindowStartupLocation=WindowStartupLocation.CenterScreen;
                 // Window-scoped dictionaries do not replace AutoCAD's application resources or theme.
-                UiTheme.Apply(this);
+                UiTheme.Apply(this);UiTheme.UseLogo(this);
                 shell.Background=UiTheme.Canvas;shell.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});shell.RowDefinitions.Add(new RowDefinition());shell.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});Content=shell;
                 shell.Children.Add(BuildTopBar(host));
                 body.Margin=new Thickness(24,20,24,8);body.MinWidth=BodyMinWidth;body.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.RowDefinitions.Add(new RowDefinition());body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(290)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(350)});
@@ -113,8 +113,7 @@ namespace CadBatch.UI
                 var bar=new Border{Background=UiTheme.Surface,BorderBrush=UiTheme.Line,BorderThickness=new Thickness(0,0,0,1),Padding=new Thickness(20,8,16,8)};
                 var top=new DockPanel();bar.Child=top;
                 var brand=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,18,0),VerticalAlignment=VerticalAlignment.Center};
-                var glyph=UiTheme.Icon(UiTheme.IconDocument,16,UiTheme.OnAccent);glyph.HorizontalAlignment=HorizontalAlignment.Center;
-                brand.Children.Add(new Border{Width=32,Height=32,CornerRadius=new CornerRadius(9),Background=new LinearGradientBrush(Color.FromRgb(10,132,255),Color.FromRgb(0,98,204),90),Child=glyph});
+                brand.Children.Add(UiTheme.Logo(38));
                 var name=UiTheme.Text("CAD Batch",18,FontWeights.SemiBold);name.Margin=new Thickness(10,0,0,1);name.VerticalAlignment=VerticalAlignment.Center;brand.Children.Add(name);top.Children.Add(brand);
 
                 var help=UiTheme.Button("Помощь",UiTheme.IconHelp,"Outline");help.ToolTip="Знакомство с программой: три шага";help.Click+=(s,e)=>ShowIntro();help.Margin=new Thickness(10,0,0,0);DockPanel.SetDock(help,WDock.Right);top.Children.Add(help);
@@ -480,7 +479,7 @@ namespace CadBatch.UI
                 {
                     UiTheme.Apply(this,false);WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=Brushes.Transparent;Topmost=true;ShowInTaskbar=false;ShowActivated=false;ResizeMode=ResizeMode.NoResize;SizeToContent=SizeToContent.WidthAndHeight;Title="CAD Batch";
                     var row=new StackPanel{Orientation=Orientation.Horizontal};
-                    var icon=new Border{Width=32,Height=32,CornerRadius=new CornerRadius(9),Background=UiTheme.Accent,VerticalAlignment=VerticalAlignment.Center,Child=UiTheme.Icon(UiTheme.IconDocument,15,UiTheme.OnAccent)};((TextBlock)icon.Child).HorizontalAlignment=HorizontalAlignment.Center;row.Children.Add(icon);
+                    row.Children.Add(UiTheme.Logo(36));
                     var text=UiTheme.Text(message,15,FontWeights.SemiBold);text.VerticalAlignment=VerticalAlignment.Center;text.Margin=new Thickness(12,0,16,0);text.MaxWidth=460;row.Children.Add(text);
                     if(back!=null){var button=UiTheme.Button("Вернуться в CAD Batch",null,"Primary");button.Click+=(s,e)=>back();row.Children.Add(button);}
                     var surface=new Border{Child=row,Background=UiTheme.Surface,CornerRadius=new CornerRadius(14),BorderBrush=new SolidColorBrush(Color.FromArgb(40,0,0,0)),BorderThickness=new Thickness(1),Padding=new Thickness(14,10,10,10),Margin=new Thickness(14),

@@ -22,12 +22,7 @@ namespace CadBatch.Desktop
     {
         public static void OpenUpdates(Window owner,bool busy=false){var w=new UpdateWindow(busy){Owner=owner};w.ShowDialog();}
         public static IntPtr Handle(Window window)=>new WindowInteropHelper(window).Handle;
-        public static Border AppIcon(double size)
-        {
-            var icon=UiTheme.Icon(UiTheme.IconDocument,size*0.46,UiTheme.OnAccent);icon.HorizontalAlignment=HorizontalAlignment.Center;
-            return new Border{Width=size,Height=size,CornerRadius=new CornerRadius(size*0.26),Background=new LinearGradientBrush(Color.FromRgb(10,132,255),Color.FromRgb(0,92,196),90),Child=icon,
-                Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=18,ShadowDepth=4,Direction=270,Opacity=0.18,Color=Color.FromRgb(0,80,180)}};
-        }
+        public static FrameworkElement AppIcon(double size)=>UiTheme.Logo(size);
         // Follows the text size chosen in the main window: the whole window grows, not only the letters.
         public static void Scale(Window window)
         {
@@ -68,7 +63,7 @@ namespace CadBatch.Desktop
         public ConnectionWindow(bool allowAuto=true)
         {
             this.allowAuto=allowAuto;
-            Title="CAD Batch";Width=640;Height=800;MinWidth=540;MinHeight=600;WindowStartupLocation=WindowStartupLocation.CenterScreen;UiTheme.Apply(this);
+            Title="CAD Batch";Width=640;Height=800;MinWidth=540;MinHeight=600;WindowStartupLocation=WindowStartupLocation.CenterScreen;UiTheme.Apply(this);UiTheme.UseLogo(this);
             var stack=new StackPanel{Margin=new Thickness(36,36,36,24),MaxWidth=520};Content=new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Background=UiTheme.Canvas};
             var icon=DesktopUi.AppIcon(68);icon.HorizontalAlignment=HorizontalAlignment.Center;icon.Margin=new Thickness(0,0,0,16);stack.Children.Add(icon);
             var title=UiTheme.Title("CAD Batch",30);title.HorizontalAlignment=HorizontalAlignment.Center;stack.Children.Add(title);
@@ -107,7 +102,7 @@ namespace CadBatch.Desktop
             var keep=(sessions.SelectedItem as BridgeEndpoint)?.Pipe;
             checklist.Children.Clear();
             checklist.Children.Add(Step(1,"Компонент для AutoCAD",component?"Установлен":"Нужен, чтобы AutoCAD мог работать с CAD Batch",component,component?null:("Установить",InstallComponent)));
-            checklist.Children.Add(Step(2,"AutoCAD запущен",running?"Работает на этом компьютере":"Запустите полный AutoCAD 2023 или новее",running,running?null:("Запустить",LaunchCad)));
+            checklist.Children.Add(Step(2,"AutoCAD запущен",running?"Работает на этом компьютере":"Запустите полный AutoCAD 2021 или новее",running,running?null:("Запустить",LaunchCad)));
             string third=found.Count>0?(found.Count==1?"AutoCAD готов к работе":"Найдено копий AutoCAD: "+found.Count):running?"Если AutoCAD открыли до установки компонента — перезапустите его":"Появится автоматически после запуска AutoCAD";
             checklist.Children.Add(Step(3,"Связь с CAD Batch",third,found.Count>0,null,last:true));
             sessionArea.Children.Clear();
@@ -179,7 +174,7 @@ namespace CadBatch.Desktop
             var paths=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try{using var key=Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Autodesk\AutoCAD");if(key!=null)foreach(string version in key.GetSubKeyNames())using(var v=key.OpenSubKey(version))if(v!=null)foreach(string product in v.GetSubKeyNames())using(var p=v.OpenSubKey(product)){string? dir=p?.GetValue("AcadLocation") as string;if(dir!=null&&File.Exists(Path.Combine(dir,"acad.exe")))paths.Add(Path.Combine(dir,"acad.exe"));}}catch(System.Security.SecurityException){}catch(UnauthorizedAccessException){}
             string autodesk=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Autodesk");if(Directory.Exists(autodesk))foreach(string dir in Directory.GetDirectories(autodesk,"AutoCAD 20*"))if(File.Exists(Path.Combine(dir,"acad.exe")))paths.Add(Path.Combine(dir,"acad.exe"));
-            if(paths.Count==0){ModernDialog.Message(DesktopUi.Handle(this),"AutoCAD не найден","Установите полный AutoCAD 2023 или новее. AutoCAD LT не поддерживается.",DialogKind.Warning);return;}
+            if(paths.Count==0){ModernDialog.Message(DesktopUi.Handle(this),"AutoCAD не найден","Установите полный AutoCAD 2021 или новее. AutoCAD LT не поддерживается.",DialogKind.Warning);return;}
             // Newest version first; "AutoCAD 2026" sorts after "AutoCAD 2025" by name.
             var ordered=paths.OrderByDescending(p=>p,StringComparer.OrdinalIgnoreCase).ToArray();
             string? chosen=ordered.Length==1?ordered[0]:ModernDialog.Choice(DesktopUi.Handle(this),"Какой AutoCAD запустить?",null,ordered);
@@ -196,7 +191,7 @@ namespace CadBatch.Desktop
         private UpdateRelease? release;private string? file;private bool downloading,installing;
         public UpdateWindow(bool operationBusy)
         {
-            this.operationBusy=operationBusy;Title="Обновления CAD Batch";Width=560;Height=520;MinHeight=420;MinWidth=460;WindowStartupLocation=WindowStartupLocation.CenterOwner;ResizeMode=ResizeMode.CanResizeWithGrip;UiTheme.Apply(this);
+            this.operationBusy=operationBusy;Title="Обновления CAD Batch";Width=560;Height=520;MinHeight=420;MinWidth=460;WindowStartupLocation=WindowStartupLocation.CenterOwner;ResizeMode=ResizeMode.CanResizeWithGrip;UiTheme.Apply(this);UiTheme.UseLogo(this);
             var root=new DockPanel{Margin=new Thickness(28)};Content=root;
             var buttons=new DockPanel{LastChildFill=false,Margin=new Thickness(0,18,0,0)};DockPanel.SetDock(buttons,Dock.Bottom);root.Children.Add(buttons);
             download.IsEnabled=false;install.Visibility=Visibility.Collapsed;var close=UiTheme.Button("Закрыть");close.IsCancel=true;close.Click+=(s,e)=>Close();

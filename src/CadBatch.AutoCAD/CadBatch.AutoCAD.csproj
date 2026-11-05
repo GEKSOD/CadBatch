@@ -13,6 +13,7 @@
     <ProjectReference Include="../CadBatch.Transport/CadBatch.Transport.csproj" />
     <ProjectReference Include="../CadBatch.Pdf/CadBatch.Pdf.csproj" />
     <Compile Include="../CadBatch.SharedUi/*.cs" Link="UI/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../CadBatch.SharedUi/Assets/logo.png" LogicalName="CadBatch.Logo.png" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
